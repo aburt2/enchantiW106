@@ -1,0 +1,55 @@
+{
+  "version": 7,
+  "cmakeMinimumRequired": {
+    "major": 3
+  },
+  "configurePresets": [
+    {
+      "name": "flash_debug",
+      "displayName": "flash_debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/${presetName}",
+      "toolchainFile": "$env{SdkRootDirPath}/core/tools/cmake_toolchain_files/armgcc.cmake",
+      "inherits": "flash_debug-env",
+      "cacheVariables": {
+        "POSTPROCESS_UTILITY": "$env{POSTPROCESS_UTILITY}",
+        "LIBRARY_TYPE": "NEWLIB",
+        "LANGUAGE": "C",
+        "DEBUG_CONSOLE": "UART",
+        "CMAKE_BUILD_TYPE": "flash_debug",
+        "SdkRootDirPath": "$env{SdkRootDirPath}"
+      }
+    },
+    {
+      "name": "flash_release",
+      "displayName": "flash_release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/${presetName}",
+      "toolchainFile": "$env{SdkRootDirPath}/core/tools/cmake_toolchain_files/armgcc.cmake",
+      "inherits": "flash_release-env",
+      "cacheVariables": {
+        "POSTPROCESS_UTILITY": "$env{POSTPROCESS_UTILITY}",
+        "LIBRARY_TYPE": "NEWLIB",
+        "LANGUAGE": "C",
+        "DEBUG_CONSOLE": "UART",
+        "CMAKE_BUILD_TYPE": "flash_release",
+        "SdkRootDirPath": "$env{SdkRootDirPath}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "flash_debug",
+      "displayName": "flash_debug",
+      "configurePreset": "flash_debug"
+    },
+    {
+      "name": "flash_release",
+      "displayName": "flash_release",
+      "configurePreset": "flash_release"
+    }
+  ],
+  "include": [
+    "mcux_include.json"
+  ]
+}

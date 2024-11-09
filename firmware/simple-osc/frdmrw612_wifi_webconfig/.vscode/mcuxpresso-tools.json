@@ -1,0 +1,20 @@
+{
+  "version": "24.9",
+  "toolchainPath": "C:/Users/aniyo/.mcuxpressotools/arm-gnu-toolchain-13.2.Rel1-mingw-w64-i686-arm-none-eabi",
+  "linkedProjects": [],
+  "trustZoneType": "none",
+  "multicoreType": "none",
+  "debug": {
+    "linkserver": {},
+    "pemicro": {},
+    "segger": {}
+  },
+  "projectType": "sdk-freestanding",
+  "sdk": {
+    "version": "2.16.000",
+    "path": "D:\\Documents\\Github\\enchantiW106\\firmware\\include",
+    "boardId": "frdmrw612",
+    "deviceId": "RW612",
+    "coreId": "cm33_RW612"
+  }
+}
