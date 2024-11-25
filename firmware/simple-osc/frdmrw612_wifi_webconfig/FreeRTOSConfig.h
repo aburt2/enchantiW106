@@ -116,6 +116,9 @@
 #define INCLUDE_xTaskGetHandle                  0
 #define INCLUDE_xTaskResumeFromISR              1
 
+/* Use Freertos POSIX*/
+#define configUSE_POSIX_ERRNO                   1
+#define configUSE_APPLICATION_TASK_TAG          1
 
 
 #if defined(__ICCARM__)||defined(__CC_ARM)||defined(__GNUC__)

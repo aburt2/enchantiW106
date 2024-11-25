@@ -17,7 +17,8 @@
         "LANGUAGE": "C",
         "DEBUG_CONSOLE": "UART",
         "CMAKE_BUILD_TYPE": "flash_debug",
-        "SdkRootDirPath": "$env{SdkRootDirPath}"
+        "SdkRootDirPath": "$env{SdkRootDirPath}",
+        "EN_POSIX_THREADS": "-D_POSIX_THREADS"
       }
     },
     {

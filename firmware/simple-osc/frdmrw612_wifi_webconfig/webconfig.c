@@ -24,6 +24,10 @@
 #include "cred_flash_storage.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include "libmapper-freertos/src/lo/lo.h"
+#include "libmapper-freertos/src/lo/lo_lowlevel.h"
+#include "libmapper-freertos/src/lo/lo_types.h"
 
 #include "FreeRTOS.h"
 
@@ -40,6 +44,15 @@ static uint32_t SetBoardToClient();
 static uint32_t SetBoardToAP();
 static uint32_t CleanUpAP();
 static uint32_t CleanUpClient();
+
+// OSC Functions
+void error(int num, const char *msg, const char *path);
+int generic_handler(const char *path, const char *types, lo_arg ** argv,
+                    int argc, lo_message data, void *user_data);
+void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value);
+void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value);
+void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value);
+void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value);
 
 /*******************************************************************************
  * Definitions
@@ -374,6 +387,10 @@ static void LinkStatusChangeCallback(bool linkState)
 static void main_task(void *arg)
 {
     uint32_t result = 1;
+    uint32_t count = 0;
+    uint32_t looptime = 0;
+    lo_address osc1;
+    lo_server_thread osc_server;
 
     PRINTF(
         "\r\n"
@@ -442,7 +459,15 @@ static void main_task(void *arg)
             __BKPT(0);
     }
 
-    /* Here other tasks can be created that will run the enduser app.... */
+    /* Set up OSC */
+    if (g_BoardState.wifiState == WIFI_STATE_CLIENT) {
+        /* Configure OSC to run */
+        osc1 = lo_address_new("192.168.86.90", "8000");
+        osc_server = lo_server_thread_new("8000", error);
+        lo_server_thread_add_method(osc_server, NULL, NULL, generic_handler, NULL);
+        lo_server_thread_start(osc_server);
+    }
+
 
     /* Main Loop */
     while (1)
@@ -457,6 +482,20 @@ static void main_task(void *arg)
         {
             case WIFI_STATE_CLIENT:
                 SetBoardToClient();
+                /* Send OSC over wifi */
+                lo_bundle bundle = lo_bundle_new(LO_TT_IMMEDIATE);
+
+                /* Add messages to bundles*/
+                osc_bundle_add_int(bundle, "frdm-612/counter", count);
+                osc_bundle_add_int(bundle, "frdm-612/counter", looptime);
+
+                /* Send bundle */
+                lo_send_bundle(osc1, bundle);
+
+                /* Delete Bundle*/
+                lo_bundle_free_recursive(bundle);
+
+                /* Add counter to loop and loop time*/
                 /* Suspend here until its time to swtich back to AP */
                 vTaskSuspend(NULL);
                 CleanUpClient();
@@ -616,6 +655,65 @@ static uint32_t CleanUpClient()
 
     return 0;
 }
+//////////////////////
+// Liblo OSC server //
+//////////////////////
+
+void error(int num, const char *msg, const char *path) {
+    printf("Liblo server error %d in path %s: %s\n", num, path, msg);
+    fflush(stdout);
+}
+
+int generic_handler(const char *path, const char *types, lo_arg ** argv,
+                    int argc, lo_message data, void *user_data) {
+    for (int i = 0; i < argc; i++) {
+        printf("arg %d '%c' ", i, types[i]);
+        lo_arg_pp((lo_type)types[i], argv[i]);
+        printf("\n");
+    }
+    printf("\n");
+    fflush(stdout);
+
+    return 1;
+}
+
+void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value) {
+    int ret = 0;
+    lo_message tmp_osc = lo_message_new();
+    ret = lo_message_add_int32(tmp_osc, value);
+    if (ret < 0) {
+        lo_message_free(tmp_osc);
+        return;
+    }
+    ret = lo_bundle_add_message(puara_bundle, path, tmp_osc);
+}
+void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value) {
+    int ret = 0;
+    lo_message tmp_osc = lo_message_new();
+    ret = lo_message_add_float(tmp_osc, value);
+    if (ret < 0) {
+        lo_message_free(tmp_osc);
+        return;
+    }
+    ret = lo_bundle_add_message(puara_bundle, path, tmp_osc);
+}
+void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value) {
+    lo_message tmp_osc = lo_message_new();
+    for (int i = 0; i < size; i++) {
+        lo_message_add_int32(tmp_osc, value[i]);
+    }
+    lo_bundle_add_message(puara_bundle, path, tmp_osc);
+}
+
+void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value) {
+    lo_message tmp_osc = lo_message_new();
+    for (int i = 0; i < size; i++) {
+        lo_message_add_float(tmp_osc, value[i]);
+    }
+    lo_bundle_add_message(puara_bundle, path, tmp_osc);
+}
+
+
 /*!
  * @brief Main function.
  */

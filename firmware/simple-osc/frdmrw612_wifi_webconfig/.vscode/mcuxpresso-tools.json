@@ -12,7 +12,7 @@
   "projectType": "sdk-freestanding",
   "sdk": {
     "version": "2.16.000",
-    "path": "D:\\Documents\\Github\\enchantiW106\\firmware\\include",
+    "path": "D:\\Documents\\Github\\enchantiW106\\firmware\\include\\MCUXpressoSDK",
     "boardId": "frdmrw612",
     "deviceId": "RW612",
     "coreId": "cm33_RW612"
