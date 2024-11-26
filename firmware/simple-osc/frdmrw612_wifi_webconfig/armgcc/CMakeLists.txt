@@ -1,6 +1,6 @@
 # CROSS COMPILER SETTING
 SET(CMAKE_SYSTEM_NAME Generic)
-CMAKE_MINIMUM_REQUIRED (VERSION 3.10.0)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.16)
 
 # THE VERSION NUMBER
 SET (MCUXPRESSO_CMAKE_FORMAT_MAJOR_VERSION 2)
@@ -79,14 +79,6 @@ add_executable(${MCUX_SDK_PROJECT_NAME}
 "${ProjDirPath}/../board.h"
 "${ProjDirPath}/../clock_config.c"
 "${ProjDirPath}/../clock_config.h"
-"${ProjDirPath}/../libmapper-freertos/src/ifaddrs.h"
-"${ProjDirPath}/../libmapper-freertos/src/lo/lo.h"
-"${ProjDirPath}/../libmapper-freertos/src/lo/address.c"
-"${ProjDirPath}/../libmapper-freertos/src/lo/blob.c"
-"${ProjDirPath}/../libmapper-freertos/src/lo/server.c"
-"${ProjDirPath}/../libmapper-freertos/src/lo/message.c"
-"${ProjDirPath}/../libmapper-freertos/src/lo/bundle.c"
-"${ProjDirPath}/../libmapper-freertos/src/lo/send.c"
 )
 
 target_include_directories(${MCUX_SDK_PROJECT_NAME} PRIVATE
@@ -94,8 +86,6 @@ target_include_directories(${MCUX_SDK_PROJECT_NAME} PRIVATE
     ${SdkRootDirPath}/core/boards/frdmrw612
     ${SdkRootDirPath}/examples/frdmrw612/wifi_examples/common
 )
-
-## Add liblo to your project
 
 set_source_files_properties("${ProjDirPath}/../lwipopts.h" PROPERTIES COMPONENT_CONFIG_FILE "middleware_lwip_template")
 set_source_files_properties("${ProjDirPath}/../FreeRTOSConfig.h" PROPERTIES COMPONENT_CONFIG_FILE "middleware_freertos-kernel_template")
@@ -115,6 +105,13 @@ target_link_libraries(${MCUX_SDK_PROJECT_NAME} PRIVATE ${TARGET_LINK_SYSTEM_LIBR
 TARGET_LINK_LIBRARIES(${MCUX_SDK_PROJECT_NAME} PRIVATE -Wl,--end-group)
 
 target_link_libraries(${MCUX_SDK_PROJECT_NAME} PRIVATE ${TARGET_LINK_SYSTEM_LIBRARIES})
+
+## Add libmapper-freertos to your project
+include_directories(".")
+add_subdirectory("${ProjDirPath}/../libmapper-freertos" ${LIBRARY_OUTPUT_PATH}/libmapper-freertos)
+# Link SDK headers to libmapper library
+target_link_libraries(mapper INTERFACE ${MCUX_SDK_PROJECT_NAME})
+target_link_libraries(${MCUX_SDK_PROJECT_NAME} PRIVATE mapper)
 
 ADD_CUSTOM_COMMAND(TARGET ${MCUX_SDK_PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_OBJCOPY}
 -Obinary ${EXECUTABLE_OUTPUT_PATH}/${MCUX_SDK_PROJECT_NAME} ${EXECUTABLE_OUTPUT_PATH}/sdk20-app.bin)

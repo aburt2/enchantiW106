@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "webconfig.h": "c",
+        "pin_mux.h": "c"
+    }
+}
