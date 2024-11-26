@@ -1,6 +1,6 @@
 # CROSS COMPILER SETTING
 SET(CMAKE_SYSTEM_NAME Generic)
-CMAKE_MINIMUM_REQUIRED (VERSION 3.16)
+CMAKE_MINIMUM_REQUIRED (VERSION 3.23)
 
 # THE VERSION NUMBER
 SET (MCUXPRESSO_CMAKE_FORMAT_MAJOR_VERSION 2)
@@ -81,7 +81,7 @@ add_executable(${MCUX_SDK_PROJECT_NAME}
 "${ProjDirPath}/../clock_config.h"
 )
 
-target_include_directories(${MCUX_SDK_PROJECT_NAME} PRIVATE
+target_include_directories(${MCUX_SDK_PROJECT_NAME} PUBLIC
     ${ProjDirPath}/..
     ${SdkRootDirPath}/core/boards/frdmrw612
     ${SdkRootDirPath}/examples/frdmrw612/wifi_examples/common
@@ -107,10 +107,22 @@ TARGET_LINK_LIBRARIES(${MCUX_SDK_PROJECT_NAME} PRIVATE -Wl,--end-group)
 target_link_libraries(${MCUX_SDK_PROJECT_NAME} PRIVATE ${TARGET_LINK_SYSTEM_LIBRARIES})
 
 ## Add libmapper-freertos to your project
-include_directories(".")
+include_directories(.)
 add_subdirectory("${ProjDirPath}/../libmapper-freertos" ${LIBRARY_OUTPUT_PATH}/libmapper-freertos)
-# Link SDK headers to libmapper library
-target_link_libraries(mapper INTERFACE ${MCUX_SDK_PROJECT_NAME})
+target_include_directories(mapper INTERFACE 
+    ${ProjDirPath}/..
+    ${SdkRootDirPath}/middleware/lwip/src/include
+    ${SdkRootDirPath}/middleware/lwip/port
+    ${SdkRootDirPath}/core/CMSIS/Core/include
+    ${SdkRootDirPath}/core/utilities/debug_console
+    ${SdkRootDirPath}/core/drivers/common
+    ${SdkRootDirPath}/core/devices/RW612
+    ${SdkRootDirPath}/core/devices/RW612/drivers
+    ${SdkRootDirPath}/core/components/serial_manager
+    ${SdkRootDirPath}/core/components/uart
+    ${SdkRootDirPath}/rtos/freertos/freertos-kernel/include
+    ${SdkRootDirPath}/rtos/freertos/freertos-kernel/portable/GCC/ARM_CM33_NTZ/non_secure
+)
 target_link_libraries(${MCUX_SDK_PROJECT_NAME} PRIVATE mapper)
 
 ADD_CUSTOM_COMMAND(TARGET ${MCUX_SDK_PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_OBJCOPY}
