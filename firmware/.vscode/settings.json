@@ -2,5 +2,6 @@
     "files.associations": {
         "webconfig.h": "c",
         "pin_mux.h": "c"
-    }
+    },
+    "cmake.sourceDirectory": "D:/Documents/Github/enchantiW106/firmware/include/Zephyr/zephyr"
 }
