@@ -10,3 +10,9 @@ manifest:
       clone-depth: 1
       import:
         path-prefix: external
+        name-allowlist:
+          - cmsis
+          - cmsis-dsp
+          - picolibc
+          - segger
+          - hal_nxp
