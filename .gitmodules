@@ -1,4 +1,4 @@
-[submodule "firmware/simple-osc/frdmrw612_wifi_webconfig/libmapper-freertos"]
-	path = firmware/simple-osc/frdmrw612_wifi_webconfig/libmapper-freertos
-	url = https://github.com/aburt2/libmapper-freertos.git
-	branch = freertos-port
+[submodule "firmware/simple-osc/hello_world/src/libmapper-nxp"]
+	path = firmware/simple-osc/hello_world/src/libmapper-nxp
+	url = https://github.com/aburt2/libmapper-nxp
+	branch = zephy
