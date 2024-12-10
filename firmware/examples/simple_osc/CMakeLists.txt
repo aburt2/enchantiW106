@@ -12,19 +12,6 @@ FILE(GLOB liblo_sources
     src/libmapper-nxp/src/zlib/*.c
 )
 
-
-target_sources(app PRIVATE 
-    ${app_sources}
-    ${liblo_sources}
-)
-
-# add_executable(compat 
-#     gai_strerror.c
-#     gethostname.c
-#     getnameinfo.c
-#     ifaddrs.c
-# )
-
 # add_executable(libmapper
 #     expression/expr_buffer.h
 #     expression/expr_constant.h
@@ -86,6 +73,11 @@ target_sources(app PRIVATE
 #     value.c
 #     value.h
 # )
+
+target_sources(app PRIVATE 
+    ${app_sources}
+    ${liblo_sources}
+)
 
 # add_executable(crc32 crc32.c)
 target_include_directories(app PRIVATE "src/libmapper-nxp/src")

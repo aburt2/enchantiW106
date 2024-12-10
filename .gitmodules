@@ -1,4 +1,4 @@
-[submodule "firmware/simple-osc/hello_world/src/libmapper-nxp"]
-	path = firmware/simple-osc/hello_world/src/libmapper-nxp
+[submodule "libmapper-nxp"]
+	path = firmware/examples/simple-osc/src/libmapper-nxp
 	url = https://github.com/aburt2/libmapper-nxp
 	branch = zephy
