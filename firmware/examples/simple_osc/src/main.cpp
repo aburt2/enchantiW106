@@ -18,13 +18,13 @@
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/net/net_event.h>
 #include <errno.h>
-
-#include "ssid_config.h"
 // #include <charconv>
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
-
+#include <nxp_wifi.h>
+#include <zephyr/net/net_config.h>
+#include "ssid_config.h"
 
 static K_SEM_DEFINE(wifi_connected, 0, 1);
 static K_SEM_DEFINE(ipv4_address_obtained, 0, 1);
@@ -115,13 +115,13 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t
 
 void wifi_connect(void)
 {
-    struct net_if *iface = net_if_get_default();
+    struct net_if *iface = net_if_get_wifi_sta();
 
     struct wifi_connect_req_params wifi_params = {0};
 
 	// Save ssid and password
-	wifi_params.ssid = (const uint8_t*)WIFI_SSID;
-	wifi_params.psk = (const uint8_t*)WIFI_PSK;
+	wifi_params.ssid = (const uint8_t *)WIFI_SSID;
+	wifi_params.psk = (const uint8_t *)WIFI_PSK;
     wifi_params.ssid_length = strlen(WIFI_SSID);
     wifi_params.psk_length = strlen(WIFI_PSK);
     wifi_params.channel = WIFI_CHANNEL_ANY;
@@ -139,7 +139,7 @@ void wifi_connect(void)
 
 void wifi_status(void)
 {
-    struct net_if *iface = net_if_get_default();
+    struct net_if *iface = net_if_get_wifi_sta();
     
     struct wifi_iface_status status = {0};
 
@@ -170,6 +170,17 @@ void wifi_disconnect(void)
 }
 
 // OSC Helpers
+/* Variables */
+lo_address osc1;
+lo_address osc2;
+lo_server_thread osc_server;
+int counter = 0;
+int looptime = 0;
+int last_time = 0;
+bool wifi_on = false;
+#define TEST_ARRAY_SIZE 120
+int test_array[TEST_ARRAY_SIZE];
+
 void error(int num, const char *msg, const char *path);
 int generic_handler(const char *path, const char *types, lo_arg ** argv,
                     int argc, lo_message data, void *user_data);
@@ -177,8 +188,8 @@ void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value);
 void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value);
 void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value);
 void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value);
-void updateOSC(lo_address osc_addr, int counter, int looptime);
-void updateOSC_bundle(lo_bundle bundle, int counter, int looptime);
+void updateOSC();
+void updateOSC_bundle(lo_bundle bundle);
 
 void error(int num, const char *msg, const char *path) {
     printf("Liblo server error %d in path %s: %s\n", num, path, msg);
@@ -234,33 +245,25 @@ void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int siz
     lo_bundle_add_message(puara_bundle, path, tmp_osc);
 }
 
-void updateOSC(lo_address osc_addr, int counter, int looptime) {
+void updateOSC() {
     // Create a bundle and send it to both IP addresses
     lo_bundle bundle = lo_bundle_new(LO_TT_IMMEDIATE);
     if (!bundle) {
         return;
     }
-    updateOSC_bundle(bundle, counter, looptime);
-    lo_send_bundle(osc_addr, bundle);
+    updateOSC_bundle(bundle);
+    lo_send_bundle(osc1, bundle);
 
     // free memory from bundle
     lo_bundle_free_recursive(bundle);
 }
 
-void updateOSC_bundle(lo_bundle bundle, int counter, int looptime) {
+void updateOSC_bundle(lo_bundle bundle) {
     // Add counter
     osc_bundle_add_int(bundle, "test/counter", counter);
     osc_bundle_add_int(bundle, "test/looptime", looptime);
+    osc_bundle_add_int_array(bundle, "test/array", 60, test_array);
 }
-
-/* Variables */
-lo_address osc1;
-lo_address osc2;
-lo_server_thread osc_server;
-int counter = 0;
-int looptime = 0;
-int last_time = 0;
-bool wifi_on = false;
 
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME_MS   1000
@@ -277,6 +280,23 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 /********* MAIN **********/
 int main(void)
 {
+    // // Initialise WiFi
+    // if(!net_config_init("Initialising Network", NET_CONFIG_NEED_IPV4, 30)) {
+    //     printk("Initializing ethernet network status: success! \n\n");
+    // } else {
+    //     printk("Wifi driver failed to initialise \n\n");
+    //     while(1);
+    // }
+
+    // Setup callbacks
+    net_mgmt_init_event_callback(&wifi_cb, wifi_mgmt_event_handler,
+                                 NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
+
+    net_mgmt_init_event_callback(&ipv4_cb, wifi_mgmt_event_handler, NET_EVENT_IPV4_ADDR_ADD);
+
+    net_mgmt_add_event_callback(&wifi_cb);
+    net_mgmt_add_event_callback(&ipv4_cb);
+
     int ret;
 	bool led_state = true;
      printk("Starting OSC Example\n");
@@ -295,14 +315,6 @@ int main(void)
 
     printk("WiFi Example\nBoard: %s\n", CONFIG_BOARD);
 
-    net_mgmt_init_event_callback(&wifi_cb, wifi_mgmt_event_handler,
-                                 NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
-
-    net_mgmt_init_event_callback(&ipv4_cb, wifi_mgmt_event_handler, NET_EVENT_IPV4_ADDR_ADD);
-
-    net_mgmt_add_event_callback(&wifi_cb);
-    net_mgmt_add_event_callback(&ipv4_cb);
-
     wifi_connect();
     k_sem_take(&wifi_connected, K_FOREVER);
     wifi_status();
@@ -316,15 +328,21 @@ int main(void)
 
 	// // Loop indefinitely
     while(1) {
-		// Only send if network was properly configured
-		updateOSC(osc1, counter, looptime);
+        // Counter
 		counter++;
 		looptime = k_uptime_get_32() - looptime;
+
+        // Update test array
+        for (int i = 0; i < TEST_ARRAY_SIZE; i++) {
+            test_array[i] = counter + i;
+        }
+
+		// Only send if network was properly configured
+		updateOSC();
 
         if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
             ret = gpio_pin_toggle_dt(&led);
             led_state = !led_state;
-            printf("LED state: %s\n", led_state ? "ON" : "OFF");
             last_time = k_uptime_get_32();
         }
     }
