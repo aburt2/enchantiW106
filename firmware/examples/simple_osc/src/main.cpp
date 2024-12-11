@@ -178,6 +178,8 @@ int counter = 0;
 int looptime = 0;
 int last_time = 0;
 bool wifi_on = false;
+int start = 0;
+int end = 0;
 #define TEST_ARRAY_SIZE 120
 int test_array[TEST_ARRAY_SIZE];
 
@@ -324,13 +326,20 @@ int main(void)
 
 	printk("Initialising OSC-IP1  ... \n");
 	osc1 = lo_address_new("192.168.86.230", "8000");
-	printk("Configured OSC\n");
+	
+
+    // Creating an OSC server
+    // printk("Initialising OSC Server  ... \n");
+    // osc_server = lo_server_thread_new("8000", error);
+    // lo_server_thread_add_method(osc_server, NULL, NULL, generic_handler, NULL);
+    // lo_server_thread_start(osc_server);
+    printk("Configured OSC\n");
 
 	// // Loop indefinitely
     while(1) {
         // Counter
 		counter++;
-		looptime = k_uptime_get_32() - looptime;
+		
 
         // Update test array
         for (int i = 0; i < TEST_ARRAY_SIZE; i++) {
@@ -338,7 +347,10 @@ int main(void)
         }
 
 		// Only send if network was properly configured
+        start = k_uptime_ticks();
 		updateOSC();
+        end = k_uptime_ticks();
+        looptime = end-start;
 
         if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
             ret = gpio_pin_toggle_dt(&led);
