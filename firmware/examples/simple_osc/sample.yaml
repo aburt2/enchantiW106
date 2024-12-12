@@ -4,8 +4,8 @@ common:
     - net
     - wifi
 sample:
-  description: Test wifi driver and APIs functionality
-  name: WiFi sample app
+  description: Test OSC driver
+  name: OSC sample app
 tests:
   sample.net.wifi.nxp_wifi:
     extra_args:
