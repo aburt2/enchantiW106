@@ -19,14 +19,13 @@
 #include <zephyr/net/net_event.h>
 #include <errno.h>
 
-
 // Liblo headers for OSC
 #include <charconv>
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
 
-// Wifi Password
+/* STA Mode Configuration */
 // Define custom password in ssid_config.h
 #if __has_include("ssid_config.h")
 # include "ssid_config.h"
@@ -34,153 +33,8 @@
     #define WIFI_SSID "tstick-network"
     #define WIFI_PSK  "mappings"
 #endif
-// static K_SEM_DEFINE(wifi_connected, 0, 1);
-// static K_SEM_DEFINE(ipv4_address_obtained, 0, 1);
 
-// static struct net_mgmt_event_callback wifi_cb;
-// static struct net_mgmt_event_callback ipv4_cb;
-// int scan_result = 0;
-
-// static void handle_wifi_connect_result(struct net_mgmt_event_callback *cb)
-// {
-//     const struct wifi_status *status = (const struct wifi_status *)cb->info;
-
-//     if (status->status)
-//     {
-//         printk("Connection request failed (%d)\n", status->status);
-//     }
-//     else
-//     {
-//         printk("Connected\n");
-//         k_sem_give(&wifi_connected);
-//     }
-// }
-
-// static void handle_wifi_disconnect_result(struct net_mgmt_event_callback *cb)
-// {
-//     const struct wifi_status *status = (const struct wifi_status *)cb->info;
-
-//     if (status->status)
-//     {
-//         printk("Disconnection request (%d)\n", status->status);
-//     }
-//     else
-//     {
-//         printk("Disconnected\n");
-//         k_sem_take(&wifi_connected, K_NO_WAIT);
-//     }
-// }
-
-// static void handle_ipv4_result(struct net_if *iface)
-// {
-//     int i = 0;
-
-//     for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
-
-//         char buf[NET_IPV4_ADDR_LEN];
-
-//         if (iface->config.ip.ipv4->unicast[i].ipv4.addr_type != NET_ADDR_DHCP) {
-//             continue;
-//         }
-
-//         printk("IPv4 address: %s\n",
-//                 net_addr_ntop(AF_INET,
-//                                 &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
-//                                 buf, sizeof(buf)));
-//         printk("Subnet: %s\n",
-//                 net_addr_ntop(AF_INET,
-//                                 &iface->config.ip.ipv4->unicast[i].netmask,
-//                                 buf, sizeof(buf)));
-//         printk("Router: %s\n",
-//                 net_addr_ntop(AF_INET,
-//                                 &iface->config.ip.ipv4->gw,
-//                                 buf, sizeof(buf)));
-//         }
-
-//         k_sem_give(&ipv4_address_obtained);
-// }
-
-// static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event, struct net_if *iface)
-// {
-//     switch (mgmt_event)
-//     {
-
-//         case NET_EVENT_WIFI_CONNECT_RESULT:
-//             handle_wifi_connect_result(cb);
-//             break;
-
-//         case NET_EVENT_WIFI_DISCONNECT_RESULT:
-//             handle_wifi_disconnect_result(cb);
-//             break;
-
-//         case NET_EVENT_IPV4_ADDR_ADD:
-//             handle_ipv4_result(iface);
-//             break;
-
-//         default:
-//             break;
-//     }
-// }
-
-// void wifi_connect(void)
-// {
-//     struct net_if *iface = net_if_get_wifi_sta();
-
-//     struct wifi_connect_req_params wifi_params = {0};
-
-//     // Set default parameters
-//     wifi_params.band = WIFI_FREQ_BAND_UNKNOWN;
-//     wifi_params.channel = WIFI_CHANNEL_ANY;
-//     wifi_params.security = WIFI_SECURITY_TYPE_NONE;
-//     wifi_params.mfp = WIFI_MFP_OPTIONAL;
-//     wifi_params.eap_ver = 1;
-//     wifi_params.ignore_broadcast_ssid = 0;
-
-// 	// Save ssid and password
-// 	wifi_params.ssid = (const uint8_t *)WIFI_SSID;
-// 	wifi_params.psk = (const uint8_t *)WIFI_PSK;
-//     wifi_params.ssid_length = strlen(WIFI_SSID);
-//     wifi_params.psk_length = strlen(WIFI_PSK);
-
-//     // Attempt to connect to ssid
-//     printk("Connecting to SSID: %s\n", wifi_params.ssid);
-//     if (net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &wifi_params, sizeof(struct wifi_connect_req_params)))
-//     {
-//         printk("WiFi Connection Request Failed\n");
-//     }
-// }
-
-// void wifi_status(void)
-// {
-//     struct net_if *iface = net_if_get_wifi_sta();
-    
-//     struct wifi_iface_status status = {0};
-
-//     if (net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status,	sizeof(struct wifi_iface_status)))
-//     {
-//         printk("WiFi Status Request Failed\n");
-//     }
-
-//     printk("\n");
-
-//     if (status.state >= WIFI_STATE_ASSOCIATED) {
-//         printk("SSID: %-32s\n", status.ssid);
-//         printk("Band: %s\n", wifi_band_txt(status.band));
-//         printk("Channel: %d\n", status.channel);
-//         printk("Security: %s\n", wifi_security_txt(status.security));
-//         printk("RSSI: %d\n", status.rssi);
-//     }
-// }
-
-// void wifi_disconnect(void)
-// {
-//     struct net_if *iface = net_if_get_default();
-
-//     if (net_mgmt(NET_REQUEST_WIFI_DISCONNECT, iface, NULL, 0))
-//     {
-//         printk("WiFi Disconnection Request Failed\n");
-//     }
-// }
+LOG_MODULE_REGISTER(MAIN);
 
 /******* Variables to Send *********/
 lo_address osc1;
@@ -192,7 +46,7 @@ int last_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 120
+#define TSTICK_SIZE 60
 int test_array[TSTICK_SIZE];
 
 struct Sensors {
@@ -315,14 +169,12 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
     osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
     osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
-    osc_bundle_add_int_array(bundle, "instrument/touch/discrete", TSTICK_SIZE, sensors.mergeddiscretetouch);
     osc_bundle_add_int_array(bundle, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
     // Touch gestures
     osc_bundle_add_float(bundle, "instrument/brush", sensors.brush);
     osc_bundle_add_float_array(bundle, "instrument/multibrush", 4, sensors.multibrush);
     osc_bundle_add_float(bundle, "instrument/rub", sensors.rub);
     osc_bundle_add_float_array(bundle, "instrument/multirub", 4, sensors.multirub);
-
     
     // MIMU data
     osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
@@ -354,7 +206,8 @@ void updateOSC_bundle(lo_bundle bundle) {
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME_MS   1000
 #define BOOT_UP_DELAY_MS 500
-#define OSC_RATE_US 100
+#define OSC_RATE_TICKS 10
+#define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 // /* The devicetree node identifier for the "led0" alias. */
 #define LED0_NODE DT_ALIAS(led0)
 
@@ -372,26 +225,27 @@ static void osc_loop(void *, void *, void *) {
     bool led_state = true;
     
     if (!gpio_is_ready_dt(&led)) {
-        printk("FAILED LED SETUP\n");
+        LOG_INF("FAILED LED SETUP\n");
         return;
     }
 
     ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
     if (ret < 0) {
-        printk("FAILED LED CONFIGURATION\n");
+        LOG_INF("FAILED LED CONFIGURATION\n");
         return;
     }
-    printk("Configured LED\n");
+    LOG_INF("Configured LED");
 
-    printk("Initialising OSC-IP1  ... \n");
+    LOG_INF("Initialising OSC-IP1  ... ");
     osc1 = lo_address_new("192.168.86.230", "8000");
-    printk("Configured OSC  ... \n");
+    LOG_INF("Configured OSC  ...");
 
     // Wait a bit
     k_msleep(500);
-    printk("Starting Sending OSC messages\n");
+    LOG_INF("Starting Sending OSC messages");
 
     while(1) {
+
         // Counter
 		sensors.counter++;
 
@@ -399,7 +253,7 @@ static void osc_loop(void *, void *, void *) {
         start = k_uptime_ticks();
         updateOSC();
         end = k_uptime_ticks();
-        sensors.looptime = end-start;
+        sensors.looptime = (end-start)*USEC_PER_TICK;
 
         if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
             ret = gpio_pin_toggle_dt(&led);
@@ -408,7 +262,8 @@ static void osc_loop(void *, void *, void *) {
         }
 
         // Sleep thread for a bit
-        k_usleep(OSC_RATE_US);
+        
+        k_sleep(K_TIMEOUT_ABS_TICKS(OSC_RATE_TICKS));
     }
 }
 
@@ -417,12 +272,10 @@ static void osc_loop(void *, void *, void *) {
 #define MY_PRIORITY 5
 K_THREAD_DEFINE(my_tid, MY_STACK_SIZE,
                 osc_loop, NULL, NULL, NULL,
-                MY_PRIORITY, 0, 1000);
+                MY_PRIORITY, 0, 5000);
 
 /********* MAIN **********/
 int main(void)
 {
-    // Initialise WiFi
-	// // // Loop indefinitely
     return 0;
 }

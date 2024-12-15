@@ -1,33 +1,40 @@
-.. zephyr:code-sample:: hello_cpp_world
-   :name: Hello C++ world
+.. zephyr:code-sample:: simple-osc
+   :name: Simple OSC
 
-   Print "Hello World" to the console in C++.
+   Send large bundle over OSC
 
 Overview
 ********
 
-A simple :ref:`C++ <language_cpp>` sample that can be used with many supported board and prints
-"Hello, C++ world!" to the console.
+A simple script that combines zephyr's wifi shell example with sending a large OSC bundle.
 
 Building and Running
 ********************
 
-This configuration can be built and executed on QEMU as follows:
+This configuration can be built for the frdm-rw612 evaluation board from NXP.
 
-.. zephyr-app-commands::
-   :zephyr-app: samples/cpp/hello_world
-   :host-os: unix
-   :board: qemu_riscv32
-   :goals: run
-   :compact:
+Clone the libmapper-nxp library into libdeps inorder to compile the file
+libmapper-nxp: https://github.com/aburt2/libmapper-nxp
 
-To build for another board, change "qemu_riscv32" above to that board's name.
 
-Sample Output
-=============
+Sample console interaction
+==========================
 
 .. code-block:: console
 
-    Hello C++, world! qemu_riscv32
+   shell> wifi scan
+   Scan requested
+   shell>
+   Num  | SSID                             (len) | Chan | RSSI | Sec
+   1    | kapoueh!                         8     | 1    | -93  | WPA/WPA2
+   2    | mooooooh                         8     | 6    | -89  | WPA/WPA2
+   3    | Ap-foo blob..                    13    | 11   | -73  | WPA/WPA2
+   4    | gksu                             4     | 1    | -26  | WPA/WPA2
+   ----------
+   Scan request done
 
-Exit QEMU by pressing :kbd:`CTRL+C`
+   shell> wifi connect -s "gksu" -p SecretStuff -k 1
+   Connection requested
+   shell>
+   Connected
+   shell>
