@@ -226,7 +226,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt
 /******* Variables to Send *********/
 lo_address osc1;
 lo_address osc2;
-lo_server_thread osc_server;
+lo_server osc_server;
 int counter = 0;
 int looptime = 0;
 int last_time = 0;
@@ -234,7 +234,7 @@ int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 120
+#define TSTICK_SIZE 60
 int test_array[TSTICK_SIZE];
 
 struct Sensors {
@@ -342,7 +342,7 @@ void updateOSC() {
     }
     updateOSC_bundle(bundle);
     if (wifi_enabled && !ap_enabled) {
-        lo_send_bundle(osc1, bundle);
+        lo_send_bundle_from(osc1, osc_server, bundle);
     }
     
 
@@ -431,6 +431,10 @@ static void osc_loop(void *, void *, void *) {
     LOG_INF("Initialising OSC-IP1  ... ");
     osc1 = lo_address_new("192.168.86.230", "8000");
     LOG_INF("Configured OSC  ...");
+
+    // Create a server
+    osc_server = lo_server_new("8000", error);
+    lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
 
     // Wait a bit
     k_msleep(500);
