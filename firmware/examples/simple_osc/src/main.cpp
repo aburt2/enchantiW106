@@ -20,12 +20,23 @@
 #include <errno.h>
 
 // Liblo headers for OSC
+#include <charconv>
+#include <string>
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
 
 // Logger
 LOG_MODULE_REGISTER(MAIN);
+
+/* 1000 msec = 1 sec */
+#define SLEEP_TIME_MS   1000
+#define LOG_RATE_MS     5000
+#define BOOT_UP_DELAY_MS 500
+#define OSC_RATE_TICKS 10
+#define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+// /* The devicetree node identifier for the "led0" alias. */
+#define LED0_NODE DT_ALIAS(led0)
 
 /* STA/AP Mode Configuration */
 // Define custom password in ssid_config.h
@@ -234,13 +245,17 @@ int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 60
+#define TSTICK_SIZE 4
 int test_array[TSTICK_SIZE];
+
+std::string baseNamespace = "/";
+std::string oscNamespace;
 
 struct Sensors {
     float accl [3];
     float gyro [3];
     float magn [3];
+    float mimu [9];
     float quat [4];
     float ypr [3];
     float shake [3];
@@ -255,7 +270,7 @@ struct Sensors {
     int ttap;
     int fsr;
     float squeeze;
-    float battery;
+    float battery[4];
     float current;
     float voltage;
     float tte;
@@ -265,9 +280,9 @@ struct Sensors {
     float touchBottom;      
     int mergedtouch[TSTICK_SIZE];
     int mergeddiscretetouch[TSTICK_SIZE];
-    int counter;
-    int looptime;
+    int debug[3];
 } sensors;
+
 
 // OSC Helpers
 void error(int num, const char *msg, const char *path);
@@ -299,6 +314,7 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 }
 
 void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value) {
+    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
     int ret = 0;
     lo_message tmp_osc = lo_message_new();
     ret = lo_message_add_int32(tmp_osc, value);
@@ -306,9 +322,10 @@ void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value) {
         lo_message_free(tmp_osc);
         return;
     }
-    ret = lo_bundle_add_message(puara_bundle, path, tmp_osc);
+    ret = lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
 }
 void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value) {
+    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
     int ret = 0;
     lo_message tmp_osc = lo_message_new();
     ret = lo_message_add_float(tmp_osc, value);
@@ -316,22 +333,24 @@ void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value) 
         lo_message_free(tmp_osc);
         return;
     }
-    ret = lo_bundle_add_message(puara_bundle, path, tmp_osc);
+    ret = lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
 }
 void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value) {
+    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
     lo_message tmp_osc = lo_message_new();
     for (int i = 0; i < size; i++) {
         lo_message_add_int32(tmp_osc, value[i]);
     }
-    lo_bundle_add_message(puara_bundle, path, tmp_osc);
+    lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
 }
 
 void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value) {
+    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
     lo_message tmp_osc = lo_message_new();
     for (int i = 0; i < size; i++) {
         lo_message_add_float(tmp_osc, value[i]);
     }
-    lo_bundle_add_message(puara_bundle, path, tmp_osc);
+    lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
 }
 
 void updateOSC() {
@@ -340,7 +359,12 @@ void updateOSC() {
     if (!bundle) {
         return;
     }
+
+    start = k_uptime_ticks();
     updateOSC_bundle(bundle);
+    end = k_uptime_ticks();
+    sensors.debug[2] = (end-start)*USEC_PER_TICK;
+
     if (wifi_enabled && !ap_enabled) {
         lo_send_bundle_from(osc1, osc_server, bundle);
     }
@@ -357,9 +381,9 @@ void updateOSC_bundle(lo_bundle bundle) {
 
     //Send touch data
     osc_bundle_add_float(bundle, "instrument/touch/all", sensors.touchAll);
-    osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
-    osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
-    osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
+    // osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
+    // osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
+    // osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
     osc_bundle_add_int_array(bundle, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
     // Touch gestures
     osc_bundle_add_float(bundle, "instrument/brush", sensors.brush);
@@ -368,10 +392,11 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_float_array(bundle, "instrument/multirub", 4, sensors.multirub);
     
     // MIMU data
-    osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
-    osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
-    osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
-    osc_bundle_add_float_array(bundle, "orientation", 4, sensors.quat);
+    // osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
+    // osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
+    // osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
+    osc_bundle_add_float_array(bundle, "raw/motion", 9, sensors.mimu);
+    // osc_bundle_add_float_array(bundle, "orientation", 4, sensors.quat);
     osc_bundle_add_float_array(bundle, "ypr", 3, sensors.ypr); 
 
     // Inertial gestures
@@ -379,29 +404,19 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_float_array(bundle, "instrument/jabxyz", 3, sensors.jab);
     // Button Gestures
     osc_bundle_add_int(bundle, "instrument/button/count", sensors.count);
-    osc_bundle_add_int(bundle, "instrument/button/tap", sensors.tap);
-    osc_bundle_add_int(bundle, "instrument/button/dtap", sensors.dtap);
-    osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
+    // osc_bundle_add_int(bundle, "instrument/button/tap", sensors.tap);
+    // osc_bundle_add_int(bundle, "instrument/button/dtap", sensors.dtap);
+    // osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
 
     // Battery Data
-    osc_bundle_add_float(bundle, "battery/percentage", sensors.battery);
-    osc_bundle_add_float(bundle, "battery/current", sensors.current);
-    osc_bundle_add_float(bundle, "battery/timetoempty", sensors.tte);
-    osc_bundle_add_float(bundle, "battery/voltage", sensors.voltage);  
+    osc_bundle_add_float_array(bundle, "battery/status", 4, sensors.battery);
+    // osc_bundle_add_float(bundle, "battery/current", sensors.current);
+    // osc_bundle_add_float(bundle, "battery/timetoempty", sensors.tte);
+    // osc_bundle_add_float(bundle, "battery/voltage", sensors.voltage);  
 
     // Add counter
-    osc_bundle_add_int(bundle, "test/counter", sensors.counter);
-    osc_bundle_add_int(bundle, "test/looptime", sensors.looptime);
+    osc_bundle_add_int_array(bundle, "debug", 3, sensors.debug);
 }
-
-/* 1000 msec = 1 sec */
-#define SLEEP_TIME_MS   1000
-#define LOG_RATE_MS     5000
-#define BOOT_UP_DELAY_MS 500
-#define OSC_RATE_TICKS 10
-#define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
-// /* The devicetree node identifier for the "led0" alias. */
-#define LED0_NODE DT_ALIAS(led0)
 
 /*
  * A build error on this line means your board is unsupported.
@@ -436,6 +451,15 @@ static void osc_loop(void *, void *, void *) {
     osc_server = lo_server_new("8000", error);
     lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
 
+    // Initialise debug array
+    sensors.debug[0] = 0;
+    sensors.debug[1] = 0;
+
+    // Initialise base namespace
+    baseNamespace.append("TStick_520");
+    baseNamespace.append("/");
+    oscNamespace = baseNamespace;
+
     // Wait a bit
     k_msleep(500);
     LOG_INF("Starting Sending OSC messages");
@@ -443,13 +467,13 @@ static void osc_loop(void *, void *, void *) {
     while(1) {
 
         // Counter
-		sensors.counter++;
+		sensors.debug[0]++;
 
 		// Only send if network was properly configured
         start = k_uptime_ticks();
         updateOSC();
         end = k_uptime_ticks();
-        sensors.looptime = (end-start)*USEC_PER_TICK;
+        sensors.debug[1] = (end-start)*USEC_PER_TICK;
 
         if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
             ret = gpio_pin_toggle_dt(&led);
@@ -485,9 +509,8 @@ int main(void)
     net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);
 	net_mgmt_add_event_callback(&cb);
 
-    sta_iface = net_if_get_wifi_sta();
-
     // Wait for iface to be initialised
+    sta_iface = net_if_get_wifi_sta();
     while (!sta_iface) {
         LOG_INF("STA: is not initialized");
         sta_iface = net_if_get_wifi_sta();
@@ -495,6 +518,7 @@ int main(void)
     LOG_INF("STA: is initialized");
 
     // Wait for ap to be initialised
+    ap_iface = net_if_get_wifi_sap();
     while (!ap_iface) {
         LOG_INF("AP: is not initialized");
         ap_iface = net_if_get_wifi_sap();
@@ -509,7 +533,6 @@ int main(void)
     // enable_ap_mode();
 
     // Start OSC thread
-    int last_msg = k_uptime_get();
     while (!wifi_enabled) {
         k_msleep(500);
     }
