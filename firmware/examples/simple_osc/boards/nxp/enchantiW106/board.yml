@@ -1,0 +1,6 @@
+board:
+  name: enchantiW106
+  full_name: enchantiW106
+  vendor: nxp
+  socs:
+    - name: rw612
