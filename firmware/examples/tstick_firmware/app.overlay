@@ -39,7 +39,7 @@
 &arduino_i2c2 {
 	status = "okay";
 
-	mmc5663@30 {
+	mmc56x3@30 {
 		compatible = "memsic,mmc56x3";
 		reg = <0x30>;
 		magn-odr = <250>;

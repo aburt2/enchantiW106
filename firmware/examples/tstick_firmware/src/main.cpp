@@ -38,24 +38,6 @@ LOG_MODULE_REGISTER(MAIN);
 #define OSC_RATE_TICKS 10
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
-//////////////////////////////////
-// Battery struct and functions //
-//////////////////////////////////
-struct BatteryData {
-    float percentage = 0;
-    float voltage = 0;
-    float current = 0;
-    float TTE = 0;
-    bool status = false; // is there a battery
-    uint16_t rsense = 0;
-    float capacity = 0;
-    uint16_t designcap = 0;
-    float value;
-    unsigned long timer = 0;
-    int interval = 5000; // in ms (1/f)
-} battery;
-
-
 /* STA/AP Mode Configuration */
 // Define custom password in ssid_config.h
 #if __has_include("ssid_config.h")
@@ -305,6 +287,25 @@ struct Sensors {
     int debug[3];
 } sensors;
 
+struct Events {
+    bool battery;
+    bool mag;
+} events;
+
+//////////////////////////////////
+// Sensor Timers                //
+//////////////////////////////////
+struct sensor_timers {
+    uint32_t timer = 0;
+    uint32_t interval;
+
+    sensor_timers(int period) : interval(period) {};
+};
+
+struct sensor_timers battery(5000);
+struct sensor_timers magnetometer(4);
+struct sensor_timers led(SLEEP_TIME_MS);
+struct sensor_timers sensor_fusion(1);
 
 // OSC Helpers
 void error(int num, const char *msg, const char *path);
@@ -431,7 +432,10 @@ void updateOSC_bundle(lo_bundle bundle) {
     // osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
 
     // Battery Data
-    osc_bundle_add_float_array(bundle, "battery/status", 4, sensors.battery);
+    if (events.battery) {
+        osc_bundle_add_float_array(bundle, "battery/status", 4, sensors.battery);
+        events.battery = false;
+    }
     // osc_bundle_add_float(bundle, "battery/current", sensors.current);
     // osc_bundle_add_float(bundle, "battery/timetoempty", sensors.tte);
     // osc_bundle_add_float(bundle, "battery/voltage", sensors.voltage);  
@@ -456,9 +460,9 @@ static const struct gpio_dt_spec blue_led = GPIO_DT_SPEC_GET(BLUELED_NODE, gpios
 * Sensor Devices
 */
 const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
-const struct device *const imu = DEVICE_DT_GET_ONE(icm42670);
-const struct device *const mag = DEVICE_DT_GET_ONE(mmc56x3);
-
+const struct device *const imu = DEVICE_DT_GET_ONE(invensense_icm42670);
+const struct device *const magn = DEVICE_DT_GET_ONE(memsic_mmc56x3);
+bool led_state = true;
 
 /* Sensor Helpers */
 void readIMU();
@@ -469,10 +473,46 @@ void changeLED();
 void updateMIMU();
 
 void readIMU() {
+    // Read data from IMU
+    sensor_sample_fetch(imu);
 
+    // Store sensor info
+	struct sensor_value accel[3], gyro[3];
+    sensor_channel_get(imu, SENSOR_CHAN_ACCEL_XYZ,accel);
+    sensor_channel_get(imu, SENSOR_CHAN_GYRO_XYZ,gyro);
+    
+
+    // Save data to sensor array
+    sensors.mimu[0] = sensor_value_to_float(&accel[0]);
+    sensors.mimu[1] = sensor_value_to_float(&accel[1]);
+    sensors.mimu[2] = sensor_value_to_float(&accel[2]);
+    sensors.mimu[3] = sensor_value_to_float(&gyro[0]);
+    sensors.mimu[4] = sensor_value_to_float(&gyro[1]);
+    sensors.mimu[5] = sensor_value_to_float(&gyro[2]);
+
+    // Read magnetometer at specified rate
+    if ((k_uptime_get_32() - magnetometer.timer) > magnetometer.interval) {
+        sensor_sample_fetch(magn);
+
+        struct sensor_value mag[3];
+        sensor_channel_get(imu, SENSOR_CHAN_MAGN_XYZ,mag);
+        sensors.mimu[6] = sensor_value_to_float(&mag[0]);
+        sensors.mimu[7] = sensor_value_to_float(&mag[1]);
+        sensors.mimu[8] = sensor_value_to_float(&mag[2]);
+
+        // Update timer
+        magnetometer.timer = k_uptime_get_32();
+    }
 }
 
+void updateMIMU() {
+    // Read IMU data
+    readIMU();
 
+    // Perform sensor fusion
+    // TODO
+}
+ 
 // Data from the fuel gauge
 void readBattery() {
     // Read battery stats from fuel gauge
@@ -485,17 +525,23 @@ void readBattery() {
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_STATE_OF_CHARGE,&percentage);
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_TIME_TO_EMPTY,&tte);
 
-    // Save to battery structure
-    battery.current = sensor_value_to_float(&avg_current);
-    battery.voltage = sensor_value_to_float(&voltage);
-    battery.TTE = sensor_value_to_float(&tte);
-    battery.percentage = sensor_value_to_float(&percentage);
-
     // Save to sensors array
-    sensors.battery[0] = battery.percentage;
-    sensors.battery[1] = battery.TTE;
-    sensors.battery[2] = battery.voltage;
-    sensors.battery[3] = battery.current;
+    sensors.battery[0] = sensor_value_to_float(&percentage);
+    sensors.battery[1] = sensor_value_to_float(&tte);
+    sensors.battery[2] = sensor_value_to_float(&voltage);
+    sensors.battery[3] = sensor_value_to_float(&avg_current);
+
+    // Save events vector
+    events.battery = true;
+}
+
+void changeLED() {
+    // TODO: USE PWM instead of toggle
+    if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
+        gpio_pin_toggle_dt(&blue_led);
+        led_state = !led_state;
+        last_time = k_uptime_get_32();
+    }
 }
 
 
@@ -503,21 +549,6 @@ void readBattery() {
 static void osc_loop(void *, void *, void *);
 
 static void osc_loop(void *, void *, void *) {
-    int ret;
-    bool led_state = true;
-
-    if (!gpio_is_ready_dt(&blue_led)) {
-        LOG_INF("FAILED BLUE LED SETUP\n");
-        return;
-    }
-
-    ret = gpio_pin_configure_dt(&blue_led, GPIO_OUTPUT_ACTIVE);
-    if (ret < 0) {
-        LOG_INF("FAILED BLUE LED CONFIGURATION\n");
-        return;
-    }
-    LOG_INF("Configured LED");
-
     LOG_INF("Initialising OSC-IP1  ... ");
     osc1 = lo_address_new(OSC_ADDRESS, OSC_PORT);
     LOG_INF("Configured OSC  ...");
@@ -531,7 +562,7 @@ static void osc_loop(void *, void *, void *) {
 		LOG_ERR("imu: device not ready.\n");
 		return;
 	}
-    if (!device_is_ready(mag)) {
+    if (!device_is_ready(magn)) {
 		LOG_ERR("magnetometer: device not ready.\n");
 		return;
 	}
@@ -543,6 +574,7 @@ static void osc_loop(void *, void *, void *) {
     // Initialise debug array
     sensors.debug[0] = 0;
     sensors.debug[1] = 0;
+    sensors.debug[2] = 0;
 
     // Initialise base namespace
     baseNamespace.append("TStick_520");
@@ -555,33 +587,29 @@ static void osc_loop(void *, void *, void *) {
 
     while(1) {
         // Get data from fuelgauge
-        if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
-            ret = gpio_pin_toggle_dt(&blue_led);
-            led_state = !led_state;
-            last_time = k_uptime_get_32();
+        start = k_uptime_ticks();
+        if ((k_uptime_get_32() - battery.timer) > battery.interval) {
+            readBattery();
+            battery.timer = k_uptime_get_32();
+        } else {
+            events.battery = false;
         }
+        
+        // Get Data from IMU and magnetometer
+        updateMIMU();
 
         // Counter
 		sensors.debug[0]++;
 
-		// Only send if network was properly configured
-        start = k_uptime_ticks();
-        updateOSC();
+		// Time Sensor read length
         end = k_uptime_ticks();
         sensors.debug[1] = (end-start)*USEC_PER_TICK;
 
-        if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
-            ret = gpio_pin_toggle_dt(&blue_led);
-            led_state = !led_state;
-            last_time = k_uptime_get_32();
-        }
-
-        // if ((k_uptime_get_32() - last_log_time) > LOG_RATE_MS) {
-        //     k_thread_runtime_stats_t rt_stats_thread;
-        //     k_thread_runtime_stats_get(k_current_get(), &rt_stats_thread);
-        //     LOG_INF("Cycles: %llu\n", rt_stats_thread.execution_cycles);
-        //     last_log_time = k_uptime_get_32();
-        // }
+        // Send OSC
+        updateOSC();
+        
+        // Update LED
+        changeLED();
 
         // Sleep thread for a bit
         k_yield();
@@ -612,6 +640,18 @@ int main(void)
         LOG_INF("FAILED ORANGE LED CONFIGURATION\n");
         return 1;
     }
+    // Turn off BLue LED
+    if (!gpio_is_ready_dt(&blue_led)) {
+        LOG_INF("FAILED BLUE LED SETUP\n");
+        return 1;
+    }
+
+    ret = gpio_pin_configure_dt(&blue_led, GPIO_OUTPUT_INACTIVE);
+    if (ret < 0) {
+        LOG_INF("FAILED BLUE LED CONFIGURATION\n");
+        return 1;
+    }
+    LOG_INF("Configured LED");
 
     // Adding network call back events
     net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);
