@@ -31,19 +31,19 @@
 	leds {
 		compatible = "gpio-leds";
 		orange_led: led_1 {
-			gpios = <&hsgpio1 49 0>;
+			gpios = <&hsgpio1 17 GPIO_ACTIVE_HIGH>;
 		};
 		blue_led: led_2 {
-			gpios = <&hsgpio1 48 0>;
+			gpios = <&hsgpio1 16 GPIO_ACTIVE_HIGH>;
 		};
 		ext_led1: led_3 {
-			gpios = <&hsgpio1 50 0>;
+			gpios = <&hsgpio1 18 GPIO_ACTIVE_HIGH>;
 		};
 		ext_led2: led_4 {
-			gpios = <&hsgpio1 51 0>;
+			gpios = <&hsgpio1 19 GPIO_ACTIVE_HIGH>;
 		};
 		ext_led3: led_5 {
-			gpios = <&hsgpio1 61 0>;
+			gpios = <&hsgpio1 29 GPIO_ACTIVE_HIGH>;
 		};
 	};
 };

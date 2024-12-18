@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 # Add boards directory
-list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 # Add additional conf file directory
 set(EXTRA_CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/boards/overlay_hostap.conf)

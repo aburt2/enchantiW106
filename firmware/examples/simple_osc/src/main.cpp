@@ -18,7 +18,6 @@
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_uart.h>
 #include <errno.h>
-
 // Liblo headers for OSC
 #include <charconv>
 #include <string>
@@ -436,7 +435,7 @@ static void osc_loop(void *, void *, void *) {
         return;
     }
 
-    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
     if (ret < 0) {
         LOG_INF("FAILED LED CONFIGURATION\n");
         return;

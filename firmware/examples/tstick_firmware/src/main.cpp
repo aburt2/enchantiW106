@@ -15,6 +15,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_uart.h>
 #include <errno.h>
@@ -35,8 +37,24 @@ LOG_MODULE_REGISTER(MAIN);
 #define BOOT_UP_DELAY_MS 500
 #define OSC_RATE_TICKS 10
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
-// /* The devicetree node identifier for the "led0" alias. */
-#define LED0_NODE DT_ALIAS(led0)
+
+//////////////////////////////////
+// Battery struct and functions //
+//////////////////////////////////
+struct BatteryData {
+    float percentage = 0;
+    float voltage = 0;
+    float current = 0;
+    float TTE = 0;
+    bool status = false; // is there a battery
+    uint16_t rsense = 0;
+    float capacity = 0;
+    uint16_t designcap = 0;
+    float value;
+    unsigned long timer = 0;
+    int interval = 5000; // in ms (1/f)
+} battery;
+
 
 /* STA/AP Mode Configuration */
 // Define custom password in ssid_config.h
@@ -51,6 +69,10 @@ LOG_MODULE_REGISTER(MAIN);
     #define WIFI_AP_PSK        "mappings"
     #define WIFI_AP_IP_ADDRESS "192.168.4.1"
     #define WIFI_AP_NETMASK    "255.255.255.0"
+
+    /* OSC Configuration */
+    #define OSC_ADDRESS        "192.168.137.1"
+    #define OSC_PORT           "8000"
 #endif
 
 // Networking settings
@@ -418,11 +440,64 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_int_array(bundle, "debug", 3, sensors.debug);
 }
 
+
+
+// /* The devicetree node identifier for the "led0" alias. */
+#define ORANGELED_NODE DT_ALIAS(led0)
+#define BLUELED_NODE DT_ALIAS(led1)
+
 /*
  * A build error on this line means your board is unsupported.
  * See the sample documentation for information on how to fix this.
  */
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+static const struct gpio_dt_spec orange_led = GPIO_DT_SPEC_GET(ORANGELED_NODE, gpios);
+static const struct gpio_dt_spec blue_led = GPIO_DT_SPEC_GET(BLUELED_NODE, gpios);
+/*
+* Sensor Devices
+*/
+const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
+const struct device *const imu = DEVICE_DT_GET_ONE(icm42670);
+const struct device *const mag = DEVICE_DT_GET_ONE(mmc56x3);
+
+
+/* Sensor Helpers */
+void readIMU();
+void readTouch();
+void readAnalog();
+void readBattery();
+void changeLED();
+void updateMIMU();
+
+void readIMU() {
+
+}
+
+
+// Data from the fuel gauge
+void readBattery() {
+    // Read battery stats from fuel gauge
+    sensor_sample_fetch(fuelgauge);
+
+    // Store battery info
+    struct sensor_value voltage, avg_current, percentage, tte;
+    sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_VOLTAGE, &voltage);
+    sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_AVG_CURRENT,&avg_current);
+    sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_STATE_OF_CHARGE,&percentage);
+    sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_TIME_TO_EMPTY,&tte);
+
+    // Save to battery structure
+    battery.current = sensor_value_to_float(&avg_current);
+    battery.voltage = sensor_value_to_float(&voltage);
+    battery.TTE = sensor_value_to_float(&tte);
+    battery.percentage = sensor_value_to_float(&percentage);
+
+    // Save to sensors array
+    sensors.battery[0] = battery.percentage;
+    sensors.battery[1] = battery.TTE;
+    sensors.battery[2] = battery.voltage;
+    sensors.battery[3] = battery.current;
+}
+
 
 /* Main loop */
 static void osc_loop(void *, void *, void *);
@@ -430,22 +505,36 @@ static void osc_loop(void *, void *, void *);
 static void osc_loop(void *, void *, void *) {
     int ret;
     bool led_state = true;
-    
-    if (!gpio_is_ready_dt(&led)) {
-        LOG_INF("FAILED LED SETUP\n");
+
+    if (!gpio_is_ready_dt(&blue_led)) {
+        LOG_INF("FAILED BLUE LED SETUP\n");
         return;
     }
 
-    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+    ret = gpio_pin_configure_dt(&blue_led, GPIO_OUTPUT_ACTIVE);
     if (ret < 0) {
-        LOG_INF("FAILED LED CONFIGURATION\n");
+        LOG_INF("FAILED BLUE LED CONFIGURATION\n");
         return;
     }
     LOG_INF("Configured LED");
 
     LOG_INF("Initialising OSC-IP1  ... ");
-    osc1 = lo_address_new("192.168.86.230", "8000");
+    osc1 = lo_address_new(OSC_ADDRESS, OSC_PORT);
     LOG_INF("Configured OSC  ...");
+
+    // Check device is ready
+    if (!device_is_ready(fuelgauge)) {
+		LOG_ERR("fuelgauge: device not ready.\n");
+		return;
+	}
+    if (!device_is_ready(imu)) {
+		LOG_ERR("imu: device not ready.\n");
+		return;
+	}
+    if (!device_is_ready(mag)) {
+		LOG_ERR("magnetometer: device not ready.\n");
+		return;
+	}
 
     // Create a server
     osc_server = lo_server_new("8000", error);
@@ -465,6 +554,12 @@ static void osc_loop(void *, void *, void *) {
     LOG_INF("Starting Sending OSC messages");
 
     while(1) {
+        // Get data from fuelgauge
+        if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
+            ret = gpio_pin_toggle_dt(&blue_led);
+            led_state = !led_state;
+            last_time = k_uptime_get_32();
+        }
 
         // Counter
 		sensors.debug[0]++;
@@ -476,7 +571,7 @@ static void osc_loop(void *, void *, void *) {
         sensors.debug[1] = (end-start)*USEC_PER_TICK;
 
         if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
-            ret = gpio_pin_toggle_dt(&led);
+            ret = gpio_pin_toggle_dt(&blue_led);
             led_state = !led_state;
             last_time = k_uptime_get_32();
         }
@@ -504,7 +599,20 @@ int main(void)
 {
     // Wait for wifi network manager to be initialised
     k_msleep(5000);
-    
+
+    // Turn on Orange LED
+    if (!gpio_is_ready_dt(&orange_led)) {
+        LOG_INF("FAILED ORANGE LED SETUP\n");
+        return 1;
+    }
+
+    int ret;
+    ret = gpio_pin_configure_dt(&orange_led, GPIO_OUTPUT_ACTIVE);
+    if (ret < 0) {
+        LOG_INF("FAILED ORANGE LED CONFIGURATION\n");
+        return 1;
+    }
+
     // Adding network call back events
     net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);
 	net_mgmt_add_event_callback(&cb);
@@ -537,6 +645,9 @@ int main(void)
         k_msleep(500);
     }
     LOG_INF("Connect to Wifi");
+
+    // toggle off LED once wifi is connected
+    ret = gpio_pin_toggle_dt(&orange_led);
 
     k_tid_t my_tid = k_thread_create(&osc_thread_data, osc_stack_area,
                             K_THREAD_STACK_SIZEOF(osc_stack_area),

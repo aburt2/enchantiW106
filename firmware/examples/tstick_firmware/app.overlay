@@ -5,12 +5,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-&arduino_spi: &flexcomm0 {
+&arduino_spi {
     status = "okay";
 
     icm42670@0 {
-		compatible = "invensense,icm42670p";
-		int-gpios = <&hsgpio1 54 GPIO_ACTIVE_HIGH>;
+		compatible = "invensense,icm42670";
+		spi-max-frequency = <24000000>;
+		reg = <0>;
+		int-gpios = <&hsgpio1 22 GPIO_ACTIVE_HIGH>;
 		accel-hz = <1600>;
 		gyro-hz = <1600>;
 		accel-fs = <8>;
