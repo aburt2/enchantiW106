@@ -1,0 +1,47 @@
+
+/*
+ * Copyright (c) 2024 Albert Niyonsenga
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&arduino_spi: &flexcomm0 {
+    status = "okay";
+
+    icm42670@0 {
+		compatible = "invensense,icm42670p";
+		int-gpios = <&hsgpio1 54 GPIO_ACTIVE_HIGH>;
+		accel-hz = <1600>;
+		gyro-hz = <1600>;
+		accel-fs = <8>;
+		gyro-fs = <2000>;
+	};
+};
+
+&arduino_i2c1 {
+	status = "okay";
+
+	max17262@36 {
+		compatible = "maxim,max17262";
+		reg = <0x36>;
+		design-voltage = <3600>;
+		desired-voltage = <3600>;
+		desired-charging-current = <2000>;
+		design-cap = <17000>;
+		empty-voltage = <3300>;
+		recovery-voltage = <3880>;
+		charge-voltage = <3600>;
+		status = "okay";
+	};
+};
+&arduino_i2c2 {
+	status = "okay";
+
+	mmc5663@30 {
+		compatible = "memsic,mmc56x3";
+		reg = <0x30>;
+		magn-odr = <250>;
+		auto-self-reset;
+		status = "okay";
+	};
+};

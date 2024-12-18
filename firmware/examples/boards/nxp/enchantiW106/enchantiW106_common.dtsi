@@ -14,10 +14,10 @@
 		led1 = &blue_led;
 		watchdog0 = &wwdt;
 		usart-0 = &flexcomm3;
-		i2c1 = &arduino_i2c1;
-		i2c2 = &arduino_i2c2;
-		i2c3 = &arduino_i2c3;
-		spi1 = &arduino_spi;
+		i2c1 = &flexcomm14;
+		i2c2 = &flexcomm1;
+		i2c3 = &flexcomm2;
+		spi1 = &flexcomm0;
 		pwm-0 = &sctimer;
 	};
 
@@ -209,20 +209,12 @@ zephyr_udc0: &usb_otg {
  */
 arduino_spi: &flexcomm0 {
 	compatible = "nxp,lpc-spi";
+	clock-frequency = <24000000>;
 	pinctrl-0 = <&pinmux_flexcomm0_spi>;
 	pinctrl-names = "default";
 	status = "okay";
 	#address-cells = <1>;
 	#size-cells = <0>;
-
-	icm42670@0 {
-		compatible = "invensense,icm42670p";
-		int-gpios = <&hsgpio1 54 GPIO_ACTIVE_HIGH>;
-		accel-hz = <1600>;
-		gyro-hz = <1600>;
-		accel-fs = <8>;
-		gyro-fs = <2000>;
-	};
 };
 
 arduino_i2c1: &flexcomm14 {
@@ -233,43 +225,22 @@ arduino_i2c1: &flexcomm14 {
 	#size-cells = <0>;
 	pinctrl-0 = <&pinmux_flexcomm14_i2c>;
 	pinctrl-names = "default";
-
-	max17262@36 {
-		compatible = "maxim,max17262";
-		reg = <0x36>;
-		design-voltage = <4200>;
-		desired-voltage = <4200>;
-		desired-charging-current = <1100>;
-		design-cap = <2000>;
-		empty-voltage = <3000>;
-		recovery-voltage = <3880>;
-		charge-voltage = <4150>;
-		status = "okay";
-	};
 };
 
 arduino_i2c2: &flexcomm1 {
 	compatible = "nxp,lpc-i2c";
 	status = "okay";
-	clock-frequency = <I2C_BITRATE_FAST>;
+	clock-frequency = <I2C_BITRATE_HIGH>;
 	#address-cells = <1>;
 	#size-cells = <0>;
 	pinctrl-0 = <&pinmux_flexcomm1_i2c>;
 	pinctrl-names = "default";
-
-	mmc5663@30 {
-		compatible = "memsic,mmc56x3";
-		reg = <0x30>;
-		magn_odr = <250>;
-		auto_sr = "true";
-		status = "okay";
-	};
 };
 
 arduino_i2c3: &flexcomm2 {
 	compatible = "nxp,lpc-i2c";
 	status = "okay";
-	clock-frequency = <I2C_BITRATE_FAST>;
+	clock-frequency = <I2C_BITRATE_HIGH>;
 	#address-cells = <1>;
 	#size-cells = <0>;
 	pinctrl-0 = <&pinmux_flexcomm2_i2c>;
