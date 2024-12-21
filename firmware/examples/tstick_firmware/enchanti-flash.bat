@@ -2,7 +2,7 @@
 
 rem Set common timeout
 set TIMEOUT=-t 60000
-set PORT_SPEED=115200
+set PORT_SPEED=2000000
 
 rem BLHOST_PATH should be saved as an environmental variable 
 set BLHOST_PATH=blhost 

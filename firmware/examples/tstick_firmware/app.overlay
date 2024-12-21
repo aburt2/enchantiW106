@@ -8,7 +8,7 @@
 &arduino_spi {
     status = "okay";
 
-    icm42670@0 {
+    imu0: icm42670@0 {
 		compatible = "invensense,icm42670";
 		spi-max-frequency = <24000000>;
 		reg = <0>;
@@ -23,7 +23,7 @@
 &arduino_i2c1 {
 	status = "okay";
 
-	max17262@36 {
+	fuelgauge0: max17262@36 {
 		compatible = "maxim,max17262";
 		reg = <0x36>;
 		design-voltage = <3600>;
@@ -39,10 +39,12 @@
 &arduino_i2c2 {
 	status = "okay";
 
-	mmc56x3@30 {
+	magnetometer0: mmc56x3@30 {
 		compatible = "memsic,mmc56x3";
 		reg = <0x30>;
 		magn-odr = <250>;
+		bandwidth-selection-bits-0;
+		bandwidth-selection-bits-1;
 		auto-self-reset;
 		status = "okay";
 	};

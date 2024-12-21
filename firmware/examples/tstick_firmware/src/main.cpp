@@ -404,9 +404,9 @@ void updateOSC_bundle(lo_bundle bundle) {
 
     //Send touch data
     osc_bundle_add_float(bundle, "instrument/touch/all", sensors.touchAll);
-    // osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
-    // osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
-    // osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
+    osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
+    osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
+    osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
     osc_bundle_add_int_array(bundle, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
     // Touch gestures
     osc_bundle_add_float(bundle, "instrument/brush", sensors.brush);
@@ -415,10 +415,10 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_float_array(bundle, "instrument/multirub", 4, sensors.multirub);
     
     // MIMU data
-    // osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
-    // osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
-    // osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
-    osc_bundle_add_float_array(bundle, "raw/motion", 9, sensors.mimu);
+    osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
+    osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
+    osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
+    // osc_bundle_add_float_array(bundle, "raw/motion", 9, sensors.mimu);
     // osc_bundle_add_float_array(bundle, "orientation", 4, sensors.quat);
     osc_bundle_add_float_array(bundle, "ypr", 3, sensors.ypr); 
 
@@ -427,9 +427,9 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_float_array(bundle, "instrument/jabxyz", 3, sensors.jab);
     // Button Gestures
     osc_bundle_add_int(bundle, "instrument/button/count", sensors.count);
-    // osc_bundle_add_int(bundle, "instrument/button/tap", sensors.tap);
-    // osc_bundle_add_int(bundle, "instrument/button/dtap", sensors.dtap);
-    // osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
+    osc_bundle_add_int(bundle, "instrument/button/tap", sensors.tap);
+    osc_bundle_add_int(bundle, "instrument/button/dtap", sensors.dtap);
+    osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
 
     // Battery Data
     if (events.battery) {
@@ -459,10 +459,46 @@ static const struct gpio_dt_spec blue_led = GPIO_DT_SPEC_GET(BLUELED_NODE, gpios
 /*
 * Sensor Devices
 */
+#define IMU_CHANNELS { SENSOR_CHAN_ACCEL_XYZ, 0}, { SENSOR_CHAN_GYRO_XYZ, 0}             
+
+#define MAGN_CHANNELS { SENSOR_CHAN_MAGN_XYZ, 0}
+
+#define FUELGAUGE_CHANNELS {SENSOR_CHAN_GAUGE_VOLTAGE, 0}, {SENSOR_CHAN_GAUGE_AVG_CURRENT, 0}, {SENSOR_CHAN_GAUGE_STATE_OF_CHARGE, 0}, {SENSOR_CHAN_GAUGE_TIME_TO_EMPTY, 0}    
+
 const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
 const struct device *const imu = DEVICE_DT_GET_ONE(invensense_icm42670);
 const struct device *const magn = DEVICE_DT_GET_ONE(memsic_mmc56x3);
 bool led_state = true;
+
+// Define sensor instances
+SENSOR_DT_READ_IODEV(imu_iodev, DT_NODELABEL(imu0), IMU_CHANNELS);
+SENSOR_DT_READ_IODEV(magn_iodev, DT_NODELABEL(magnetometer0), MAGN_CHANNELS);
+SENSOR_DT_READ_IODEV(fuelgauge_iodev, DT_NODELABEL(fuelgauge0), FUELGAUGE_CHANNELS);
+
+// Define sensor buffers
+uint8_t *imu_buf;
+uint8_t *magn_buf;
+uint8_t *fg_buf;
+uint32_t imu_buf_len;
+uint32_t magn_buf_len;
+uint32_t fg_buf_len;
+RTIO_DEFINE_WITH_MEMPOOL(imu_ctx, 2, 2, 12, 8, sizeof(void *));
+RTIO_DEFINE_WITH_MEMPOOL(magn_ctx, 2, 2, 6, 8, sizeof(void *));
+RTIO_DEFINE_WITH_MEMPOOL(fg_ctx, 2, 2, 8, 8, sizeof(void *));
+
+
+// Define finish state
+int imu_rc;
+int mag_rc;
+int fg_rc;
+struct rtio_cqe *imu_cqe;
+struct rtio_cqe *mag_cqe;
+struct rtio_cqe *fg_cqe;
+
+// Define sensor deocoder
+struct sensor_decoder_api *imu_decoder;
+struct sensor_decoder_api *magn_decoder;
+struct sensor_decoder_api *fg_decoder;
 
 /* Sensor Helpers */
 void readIMU();
@@ -471,6 +507,7 @@ void readAnalog();
 void readBattery();
 void changeLED();
 void updateMIMU();
+void readSensor();
 
 void readIMU() {
     // Read data from IMU
@@ -480,15 +517,14 @@ void readIMU() {
 	struct sensor_value accel[3], gyro[3];
     sensor_channel_get(imu, SENSOR_CHAN_ACCEL_XYZ,accel);
     sensor_channel_get(imu, SENSOR_CHAN_GYRO_XYZ,gyro);
-    
 
     // Save data to sensor array
-    sensors.mimu[0] = sensor_value_to_float(&accel[0]);
-    sensors.mimu[1] = sensor_value_to_float(&accel[1]);
-    sensors.mimu[2] = sensor_value_to_float(&accel[2]);
-    sensors.mimu[3] = sensor_value_to_float(&gyro[0]);
-    sensors.mimu[4] = sensor_value_to_float(&gyro[1]);
-    sensors.mimu[5] = sensor_value_to_float(&gyro[2]);
+    sensors.accl[0] = sensor_value_to_float(&accel[0]);
+    sensors.accl[1] = sensor_value_to_float(&accel[1]);
+    sensors.accl[2] = sensor_value_to_float(&accel[2]);
+    sensors.gyro[0] = sensor_value_to_float(&gyro[0]);
+    sensors.gyro[1] = sensor_value_to_float(&gyro[1]);
+    sensors.gyro[2] = sensor_value_to_float(&gyro[2]);
 
     // Read magnetometer at specified rate
     if ((k_uptime_get_32() - magnetometer.timer) > magnetometer.interval) {
@@ -496,9 +532,9 @@ void readIMU() {
 
         struct sensor_value mag[3];
         sensor_channel_get(imu, SENSOR_CHAN_MAGN_XYZ,mag);
-        sensors.mimu[6] = sensor_value_to_float(&mag[0]);
-        sensors.mimu[7] = sensor_value_to_float(&mag[1]);
-        sensors.mimu[8] = sensor_value_to_float(&mag[2]);
+        sensors.magn[0] = sensor_value_to_float(&mag[0]);
+        sensors.magn[1] = sensor_value_to_float(&mag[1]);
+        sensors.magn[2] = sensor_value_to_float(&mag[2]);
 
         // Update timer
         magnetometer.timer = k_uptime_get_32();
