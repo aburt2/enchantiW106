@@ -249,8 +249,7 @@ int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 4
-int test_array[TSTICK_SIZE];
+#define TSTICK_SIZE 60
 
 std::string baseNamespace = "/";
 std::string oscNamespace;
