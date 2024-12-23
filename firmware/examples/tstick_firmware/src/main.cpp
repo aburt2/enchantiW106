@@ -24,6 +24,7 @@
 // Liblo headers for OSC
 #include <charconv>
 #include <string>
+#include "osc.hpp"
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
@@ -242,6 +243,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt
 lo_address osc1;
 lo_address osc2;
 lo_server osc_server;
+oscBundle puara_bundle;
 int counter = 0;
 int looptime = 0;
 int last_time = 0;
@@ -249,7 +251,7 @@ int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 60
+#define TSTICK_SIZE 120
 
 std::string baseNamespace = "/";
 std::string oscNamespace;
@@ -273,7 +275,7 @@ struct Sensors {
     int ttap;
     int fsr;
     float squeeze;
-    float battery[4];
+    float battery;
     float current;
     float voltage;
     float tte;
@@ -285,6 +287,8 @@ struct Sensors {
     int mergeddiscretetouch[TSTICK_SIZE];
     int debug[3];
 } sensors;
+
+
 
 struct Events {
     bool battery;
@@ -310,12 +314,9 @@ struct sensor_timers sensor_fusion(1);
 void error(int num, const char *msg, const char *path);
 int generic_handler(const char *path, const char *types, lo_arg ** argv,
                     int argc, lo_message data, void *user_data);
-void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value);
-void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value);
-void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value);
-void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value);
 void updateOSC();
-void updateOSC_bundle(lo_bundle bundle);
+void initOSC_bundle();
+void updateOSC_bundle();
 
 void error(int num, const char *msg, const char *path) {
     printf("Liblo server error %d in path %s: %s\n", num, path, msg);
@@ -335,110 +336,100 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
     return 1;
 }
 
-void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    int ret = 0;
-    lo_message tmp_osc = lo_message_new();
-    ret = lo_message_add_int32(tmp_osc, value);
-    if (ret < 0) {
-        lo_message_free(tmp_osc);
-        return;
-    }
-    ret = lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    int ret = 0;
-    lo_message tmp_osc = lo_message_new();
-    ret = lo_message_add_float(tmp_osc, value);
-    if (ret < 0) {
-        lo_message_free(tmp_osc);
-        return;
-    }
-    ret = lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    lo_message tmp_osc = lo_message_new();
-    for (int i = 0; i < size; i++) {
-        lo_message_add_int32(tmp_osc, value[i]);
-    }
-    lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-
-void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    lo_message tmp_osc = lo_message_new();
-    for (int i = 0; i < size; i++) {
-        lo_message_add_float(tmp_osc, value[i]);
-    }
-    lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
-    lo_bundle bundle = lo_bundle_new(LO_TT_IMMEDIATE);
-    if (!bundle) {
-        return;
-    }
-
     start = k_uptime_ticks();
-    updateOSC_bundle(bundle);
+    updateOSC_bundle();
     end = k_uptime_ticks();
     sensors.debug[2] = (end-start)*USEC_PER_TICK;
 
     if (wifi_enabled && !ap_enabled) {
-        lo_send_bundle_from(osc1, osc_server, bundle);
+        lo_send_bundle_from(osc1, osc_server, puara_bundle.bundle);
     }
-    
-
-    // free memory from bundle
-    lo_bundle_free_recursive(bundle);
 }
 
-void updateOSC_bundle(lo_bundle bundle) {
+void initOSC_bundle() {
     // Continuously send FSR data
-    osc_bundle_add_int(bundle, "raw/fsr", sensors.fsr);
-    osc_bundle_add_float(bundle, "instrument/squeeze", sensors.squeeze);
+    puara_bundle.add("raw/fsr", sensors.fsr);
+    puara_bundle.add("instrument/squeeze", sensors.squeeze);
 
     //Send touch data
-    osc_bundle_add_float(bundle, "instrument/touch/all", sensors.touchAll);
-    osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
-    osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
-    osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
-    osc_bundle_add_int_array(bundle, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
+    puara_bundle.add("instrument/touch/all", sensors.touchAll);
+    puara_bundle.add("instrument/touch/top", sensors.touchTop);
+    puara_bundle.add("instrument/touch/middle", sensors.touchMiddle);
+    puara_bundle.add("instrument/touch/bottom", sensors.touchBottom);
+    puara_bundle.add_array("raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
     // Touch gestures
-    osc_bundle_add_float(bundle, "instrument/brush", sensors.brush);
-    osc_bundle_add_float_array(bundle, "instrument/multibrush", 4, sensors.multibrush);
-    osc_bundle_add_float(bundle, "instrument/rub", sensors.rub);
-    osc_bundle_add_float_array(bundle, "instrument/multirub", 4, sensors.multirub);
+    puara_bundle.add("instrument/brush", sensors.brush);
+    puara_bundle.add_array("instrument/multibrush", 4, sensors.multibrush);
+    puara_bundle.add("instrument/rub", sensors.rub);
+    puara_bundle.add_array("instrument/multirub", 4, sensors.multirub);
     
     // MIMU data
-    osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
-    osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
-    osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
-    osc_bundle_add_float_array(bundle, "ypr", 3, sensors.ypr); 
+    puara_bundle.add_array("raw/accl", 3, sensors.accl);
+    puara_bundle.add_array("raw/gyro", 3, sensors.gyro);
+    puara_bundle.add_array("raw/magn", 3, sensors.magn);
+    puara_bundle.add_array("ypr", 3, sensors.ypr); 
 
     // Inertial gestures
-    osc_bundle_add_float_array(bundle, "instrument/shakexyz", 3, sensors.shake);
-    osc_bundle_add_float_array(bundle, "instrument/jabxyz", 3, sensors.jab);
+    puara_bundle.add_array("instrument/shakexyz", 3, sensors.shake);
+    puara_bundle.add_array("instrument/jabxyz", 3, sensors.jab);
     // Button Gestures
-    osc_bundle_add_int(bundle, "instrument/button/count", sensors.count);
-    osc_bundle_add_int(bundle, "instrument/button/tap", sensors.tap);
-    osc_bundle_add_int(bundle, "instrument/button/dtap", sensors.dtap);
-    osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
+    puara_bundle.add("instrument/button/count", sensors.count);
+    puara_bundle.add("instrument/button/tap", sensors.tap);
+    puara_bundle.add("instrument/button/dtap", sensors.dtap);
+    puara_bundle.add("instrument/button/ttap", sensors.ttap);
 
     // Battery Data
-    if (events.battery) {
-        osc_bundle_add_float_array(bundle, "battery/status", 4, sensors.battery);
-        events.battery = false;
-    }
-    // osc_bundle_add_float(bundle, "battery/current", sensors.current);
-    // osc_bundle_add_float(bundle, "battery/timetoempty", sensors.tte);
-    // osc_bundle_add_float(bundle, "battery/voltage", sensors.voltage);  
+    puara_bundle.add("battery/percentage", sensors.battery);
+    puara_bundle.add("battery/current", sensors.current);
+    puara_bundle.add("battery/timetoempty", sensors.tte);
+    puara_bundle.add("battery/voltage", sensors.voltage);  
 
     // Add counter
-    osc_bundle_add_int_array(bundle, "debug", 3, sensors.debug);
+    puara_bundle.add_array("debug", 3, sensors.debug);
+}
+
+void updateOSC_bundle() {
+    // Continuously send FSR data
+    puara_bundle.update_message(0, sensors.fsr);
+    puara_bundle.update_message(1, sensors.squeeze);
+
+    //Send touch data
+    puara_bundle.update_message(2, sensors.touchAll);
+    puara_bundle.update_message(3, sensors.touchTop);
+    puara_bundle.update_message(4, sensors.touchMiddle);
+    puara_bundle.update_message(5, sensors.touchBottom);
+    puara_bundle.update_message(6, TSTICK_SIZE, sensors.mergedtouch);
+    // Touch gestures
+    puara_bundle.update_message(7, sensors.brush);
+    puara_bundle.update_message(8, 4, sensors.multibrush);
+    puara_bundle.update_message(9, sensors.rub);
+    puara_bundle.update_message(10, 4, sensors.multirub);
+    
+    // MIMU data
+    puara_bundle.update_message(11, 3, sensors.accl);
+    puara_bundle.update_message(12, 3, sensors.gyro);
+    puara_bundle.update_message(13, 3, sensors.magn);
+    puara_bundle.update_message(14, 3, sensors.ypr); 
+
+    // Inertial gestures
+    puara_bundle.update_message(15, 3, sensors.shake);
+    puara_bundle.update_message(16, 3, sensors.jab);
+    // Button Gestures
+    puara_bundle.update_message(17, sensors.count);
+    puara_bundle.update_message(18, sensors.tap);
+    puara_bundle.update_message(19, sensors.dtap);
+    puara_bundle.update_message(20, sensors.ttap);
+
+    // Battery Data
+    puara_bundle.update_message(21, sensors.battery);
+    puara_bundle.update_message(22, sensors.current);
+    puara_bundle.update_message(23, sensors.tte);
+    puara_bundle.update_message(24, sensors.voltage);
+    
+    // Add counter
+    puara_bundle.update_message(25, 3, sensors.debug);
 }
 
 
@@ -559,10 +550,10 @@ void readBattery() {
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_TIME_TO_EMPTY,&tte);
 
     // Save to sensors array
-    sensors.battery[0] = sensor_value_to_float(&percentage);
-    sensors.battery[1] = sensor_value_to_float(&tte);
-    sensors.battery[2] = sensor_value_to_float(&voltage);
-    sensors.battery[3] = sensor_value_to_float(&avg_current);
+    sensors.battery = sensor_value_to_float(&percentage);
+    sensors.tte = sensor_value_to_float(&tte) / 60.0f;
+    sensors.voltage = sensor_value_to_float(&voltage);
+    sensors.current = sensor_value_to_float(&avg_current);
 
     // Save events vector
     events.battery = true;
@@ -611,8 +602,14 @@ static void osc_loop(void *, void *, void *) {
 
     // Initialise base namespace
     baseNamespace.append("TStick_520");
-    baseNamespace.append("/");
     oscNamespace = baseNamespace;
+
+    // Init puara bundle
+    puara_bundle.init(baseNamespace.c_str());
+    initOSC_bundle();
+
+    LOG_INF("Bundle initialised with %d messages", puara_bundle.num_messages);
+
 
     // Wait a bit
     k_msleep(500);

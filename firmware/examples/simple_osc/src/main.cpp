@@ -21,6 +21,7 @@
 // Liblo headers for OSC
 #include <charconv>
 #include <string>
+#include "osc.hpp"
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
@@ -236,6 +237,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt
 /******* Variables to Send *********/
 lo_address osc1;
 lo_address osc2;
+oscBundle puara_bundle;
 lo_server osc_server;
 int counter = 0;
 int looptime = 0;
@@ -244,55 +246,20 @@ int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 4
-int test_array[TSTICK_SIZE];
+#define TEST_SIZE 512
+int test_array[TEST_SIZE];
 
+// OSC Namespace
 std::string baseNamespace = "/";
 std::string oscNamespace;
-
-struct Sensors {
-    float accl [3];
-    float gyro [3];
-    float magn [3];
-    float mimu [9];
-    float quat [4];
-    float ypr [3];
-    float shake [3];
-    float jab [3];
-    float brush;
-    float rub;
-    float multibrush [4];
-    float multirub [4];
-    int count;
-    int tap;
-    int dtap;
-    int ttap;
-    int fsr;
-    float squeeze;
-    float battery[4];
-    float current;
-    float voltage;
-    float tte;
-    float touchAll;         
-    float touchTop;         
-    float touchMiddle;      
-    float touchBottom;      
-    int mergedtouch[TSTICK_SIZE];
-    int mergeddiscretetouch[TSTICK_SIZE];
-    int debug[3];
-} sensors;
-
 
 // OSC Helpers
 void error(int num, const char *msg, const char *path);
 int generic_handler(const char *path, const char *types, lo_arg ** argv,
                     int argc, lo_message data, void *user_data);
-void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value);
-void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value);
-void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value);
-void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value);
 void updateOSC();
-void updateOSC_bundle(lo_bundle bundle);
+void initOSC_bundle();
+void updateOSC_bundle();
 
 void error(int num, const char *msg, const char *path) {
     printf("Liblo server error %d in path %s: %s\n", num, path, msg);
@@ -312,109 +279,28 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
     return 1;
 }
 
-void osc_bundle_add_int(lo_bundle puara_bundle,const char *path, int value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    int ret = 0;
-    lo_message tmp_osc = lo_message_new();
-    ret = lo_message_add_int32(tmp_osc, value);
-    if (ret < 0) {
-        lo_message_free(tmp_osc);
-        return;
-    }
-    ret = lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-void osc_bundle_add_float(lo_bundle puara_bundle,const char *path, float value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    int ret = 0;
-    lo_message tmp_osc = lo_message_new();
-    ret = lo_message_add_float(tmp_osc, value);
-    if (ret < 0) {
-        lo_message_free(tmp_osc);
-        return;
-    }
-    ret = lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-void osc_bundle_add_int_array(lo_bundle puara_bundle,const char *path, int size, int *value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    lo_message tmp_osc = lo_message_new();
-    for (int i = 0; i < size; i++) {
-        lo_message_add_int32(tmp_osc, value[i]);
-    }
-    lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-
-void osc_bundle_add_float_array(lo_bundle puara_bundle,const char *path, int size,  float *value) {
-    oscNamespace.replace(oscNamespace.begin()+baseNamespace.size(),oscNamespace.end(), path);
-    lo_message tmp_osc = lo_message_new();
-    for (int i = 0; i < size; i++) {
-        lo_message_add_float(tmp_osc, value[i]);
-    }
-    lo_bundle_add_message(puara_bundle, oscNamespace.c_str(), tmp_osc);
-}
-
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
-    lo_bundle bundle = lo_bundle_new(LO_TT_IMMEDIATE);
-    if (!bundle) {
-        return;
-    }
-
     start = k_uptime_ticks();
-    updateOSC_bundle(bundle);
+    updateOSC_bundle();
     end = k_uptime_ticks();
-    sensors.debug[2] = (end-start)*USEC_PER_TICK;
+    looptime = (end-start)*USEC_PER_TICK;
 
     if (wifi_enabled && !ap_enabled) {
-        lo_send_bundle_from(osc1, osc_server, bundle);
+        lo_send_bundle_from(osc1, osc_server, puara_bundle.bundle);
     }
-    
-
-    // free memory from bundle
-    lo_bundle_free_recursive(bundle);
 }
 
-void updateOSC_bundle(lo_bundle bundle) {
-    // Continuously send FSR data
-    osc_bundle_add_int(bundle, "raw/fsr", sensors.fsr);
-    osc_bundle_add_float(bundle, "instrument/squeeze", sensors.squeeze);
+void initOSC_bundle() {
+    puara_bundle.add("counter",  counter);
+    puara_bundle.add("looptime", looptime);
+    puara_bundle.add_array("test_array", TEST_SIZE, test_array);
+}
 
-    //Send touch data
-    osc_bundle_add_float(bundle, "instrument/touch/all", sensors.touchAll);
-    // osc_bundle_add_float(bundle, "instrument/touch/top", sensors.touchTop);
-    // osc_bundle_add_float(bundle, "instrument/touch/middle", sensors.touchMiddle);
-    // osc_bundle_add_float(bundle, "instrument/touch/bottom", sensors.touchBottom);
-    osc_bundle_add_int_array(bundle, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
-    // Touch gestures
-    osc_bundle_add_float(bundle, "instrument/brush", sensors.brush);
-    osc_bundle_add_float_array(bundle, "instrument/multibrush", 4, sensors.multibrush);
-    osc_bundle_add_float(bundle, "instrument/rub", sensors.rub);
-    osc_bundle_add_float_array(bundle, "instrument/multirub", 4, sensors.multirub);
-    
-    // MIMU data
-    // osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
-    // osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
-    // osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
-    osc_bundle_add_float_array(bundle, "raw/motion", 9, sensors.mimu);
-    // osc_bundle_add_float_array(bundle, "orientation", 4, sensors.quat);
-    osc_bundle_add_float_array(bundle, "ypr", 3, sensors.ypr); 
-
-    // Inertial gestures
-    osc_bundle_add_float_array(bundle, "instrument/shakexyz", 3, sensors.shake);
-    osc_bundle_add_float_array(bundle, "instrument/jabxyz", 3, sensors.jab);
-    // Button Gestures
-    osc_bundle_add_int(bundle, "instrument/button/count", sensors.count);
-    // osc_bundle_add_int(bundle, "instrument/button/tap", sensors.tap);
-    // osc_bundle_add_int(bundle, "instrument/button/dtap", sensors.dtap);
-    // osc_bundle_add_int(bundle, "instrument/button/ttap", sensors.ttap);
-
-    // Battery Data
-    osc_bundle_add_float_array(bundle, "battery/status", 4, sensors.battery);
-    // osc_bundle_add_float(bundle, "battery/current", sensors.current);
-    // osc_bundle_add_float(bundle, "battery/timetoempty", sensors.tte);
-    // osc_bundle_add_float(bundle, "battery/voltage", sensors.voltage);  
-
-    // Add counter
-    osc_bundle_add_int_array(bundle, "debug", 3, sensors.debug);
+void updateOSC_bundle() {
+    puara_bundle.update_message(0,  counter);
+    puara_bundle.update_message(1, looptime);
+    puara_bundle.update_message(2, TEST_SIZE, test_array);
 }
 
 /*
@@ -450,29 +336,24 @@ static void osc_loop(void *, void *, void *) {
     osc_server = lo_server_new("8000", error);
     lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
 
-    // Initialise debug array
-    sensors.debug[0] = 0;
-    sensors.debug[1] = 0;
-
     // Initialise base namespace
     baseNamespace.append("TStick_520");
-    baseNamespace.append("/");
-    oscNamespace = baseNamespace;
+    puara_bundle.init(baseNamespace.c_str());
+    initOSC_bundle();
 
     // Wait a bit
     k_msleep(500);
     LOG_INF("Starting Sending OSC messages");
 
     while(1) {
-
         // Counter
-		sensors.debug[0]++;
+		counter++;
 
 		// Only send if network was properly configured
         start = k_uptime_ticks();
         updateOSC();
         end = k_uptime_ticks();
-        sensors.debug[1] = (end-start)*USEC_PER_TICK;
+        looptime = (end-start)*USEC_PER_TICK;
 
         if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
             ret = gpio_pin_toggle_dt(&led);
