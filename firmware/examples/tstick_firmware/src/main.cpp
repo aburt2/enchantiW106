@@ -417,8 +417,6 @@ void updateOSC_bundle(lo_bundle bundle) {
     osc_bundle_add_float_array(bundle, "raw/accl", 3, sensors.accl);
     osc_bundle_add_float_array(bundle, "raw/gyro", 3, sensors.gyro);
     osc_bundle_add_float_array(bundle, "raw/magn", 3, sensors.magn);
-    // osc_bundle_add_float_array(bundle, "raw/motion", 9, sensors.mimu);
-    // osc_bundle_add_float_array(bundle, "orientation", 4, sensors.quat);
     osc_bundle_add_float_array(bundle, "ypr", 3, sensors.ypr); 
 
     // Inertial gestures
