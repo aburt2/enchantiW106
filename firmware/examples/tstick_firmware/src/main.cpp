@@ -542,13 +542,20 @@ void readIMU() {
         sensors.magn[2] = sensor_value_to_float(&mag[2]) * 100.0f;
 
         // Update timer
-        uint32_t now =  k_uptime_get_32();
-        magnetometer.timer = now;
+        magnetometer.timer = k_uptime_get_32();
+        events.mag = true;
+    }
+}
 
+void updateMIMU() {
+    // Read IMU data
+    readIMU();
+
+    // Perform sensor fusion
+    if (events.mag) {
         // Update sensor fusion
-        uint32_t deltaT = (now- sensor_fusion.timer) * 0.001f;
-        sensor_fusion.timer = now;
-
+        uint32_t deltaT = (k_uptime_get_32() - sensor_fusion.timer) * 0.001f;
+        
         // Set Values
         orientation.setAccelerometerValues(sensors.accl[0], sensors.accl[1], sensors.accl[2]);
         orientation.setGyroscopeRadianValues(sensors.gyro[0],sensors.gyro[1],sensors.gyro[2], deltaT);
@@ -564,19 +571,12 @@ void readIMU() {
 
         // normalise to 0 - 360
         for (int i = 0; i < 3; i++) {
-            if (sensors.ypr[i] < 0) {
-                sensors.ypr[i] = 360.0f + sensors.ypr[i];
-            }
+            sensors.ypr[i] = fmodf(sensors.ypr[i], 360.0f);
+            if (sensors.ypr[i] < 0) sensors.ypr[i] += 360.0f;
         }
+        sensor_fusion.timer = k_uptime_get_32();;
+        events.mag = false;
     }
-}
-
-void updateMIMU() {
-    // Read IMU data
-    readIMU();
-
-    // Perform sensor fusion
-    // TODO
 }
 
 // Data from the fuel gauge

@@ -76,7 +76,8 @@
 	magnetometer0: mmc56x3@30 {
 		compatible = "memsic,mmc56x3";
 		reg = <0x30>;
-		magn-odr = <1000>;
+		magn-odr = <250>;
+		auto-self-reset;
 		bandwidth-selection-bits-0;
 		bandwidth-selection-bits-1;
 		status = "okay";
