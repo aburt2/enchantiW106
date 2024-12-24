@@ -12,6 +12,7 @@
 	aliases {
 		led0 = &orange_led;
 		led1 = &blue_led;
+		btn1 = &front_button;
 		watchdog0 = &wwdt;
 		usart-0 = &flexcomm3;
 		i2c1 = &flexcomm14;
@@ -44,6 +45,16 @@
 		};
 		ext_led3: led_5 {
 			gpios = <&hsgpio1 29 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		debounce-interval-ms = <50>;
+		polling-mode;
+		front_button: button_0 {
+				gpios = <&hsgpio1 15 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+				label = "Front button";
 		};
 	};
 };

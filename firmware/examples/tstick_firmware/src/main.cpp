@@ -15,6 +15,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/adc.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/shell/shell.h>
@@ -29,6 +30,10 @@
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
 
+// Sensor fusion
+#include "imu_orientation.h"
+#include <cmath>
+
 // Logger
 LOG_MODULE_REGISTER(MAIN);
 
@@ -38,6 +43,7 @@ LOG_MODULE_REGISTER(MAIN);
 #define BOOT_UP_DELAY_MS 500
 #define OSC_RATE_TICKS 10
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#define SEC_PER_TICK float(USEC_PER_TICK) / 1000000.0f
 
 /* STA/AP Mode Configuration */
 // Define custom password in ssid_config.h
@@ -273,8 +279,8 @@ struct Sensors {
     int tap;
     int dtap;
     int ttap;
-    int fsr;
-    float squeeze;
+    int fsr[2];
+    float squeeze[2];
     float battery;
     float current;
     float voltage;
@@ -350,8 +356,8 @@ void updateOSC() {
 
 void initOSC_bundle() {
     // Continuously send FSR data
-    puara_bundle.add("raw/fsr", sensors.fsr);
-    puara_bundle.add("instrument/squeeze", sensors.squeeze);
+    puara_bundle.add_array("raw/fsr", 2, sensors.fsr);
+    puara_bundle.add_array("instrument/squeeze", 2, sensors.squeeze);
 
     //Send touch data
     puara_bundle.add("instrument/touch/all", sensors.touchAll);
@@ -392,8 +398,8 @@ void initOSC_bundle() {
 
 void updateOSC_bundle() {
     // Continuously send FSR data
-    puara_bundle.update_message(0, sensors.fsr);
-    puara_bundle.update_message(1, sensors.squeeze);
+    puara_bundle.update_message(0, 2, sensors.fsr);
+    puara_bundle.update_message(1, 2, sensors.squeeze);
 
     //Send touch data
     puara_bundle.update_message(2, sensors.touchAll);
@@ -427,12 +433,10 @@ void updateOSC_bundle() {
     puara_bundle.update_message(22, sensors.current);
     puara_bundle.update_message(23, sensors.tte);
     puara_bundle.update_message(24, sensors.voltage);
-    
+
     // Add counter
     puara_bundle.update_message(25, 3, sensors.debug);
 }
-
-
 
 // /* The devicetree node identifier for the "led0" alias. */
 #define ORANGELED_NODE DT_ALIAS(led0)
@@ -444,49 +448,44 @@ void updateOSC_bundle() {
  */
 static const struct gpio_dt_spec orange_led = GPIO_DT_SPEC_GET(ORANGELED_NODE, gpios);
 static const struct gpio_dt_spec blue_led = GPIO_DT_SPEC_GET(BLUELED_NODE, gpios);
+
+
+/* ADC Config from devicetree */
+#if !DT_NODE_EXISTS(DT_PATH(zephyr_user)) || \
+	!DT_NODE_HAS_PROP(DT_PATH(zephyr_user), io_channels)
+#error "No suitable devicetree overlay specified"
+#endif
+
+#define DT_SPEC_AND_COMMA(node_id, prop, idx) \
+	ADC_DT_SPEC_GET_BY_IDX(node_id, idx),
+
+/* Data of ADC io-channels specified in devicetree. */
+static const struct adc_dt_spec adc_channels[] = {
+	DT_FOREACH_PROP_ELEM(DT_PATH(zephyr_user), io_channels,
+			     DT_SPEC_AND_COMMA)
+};
+
+// ADC structures
+uint16_t buf;
+struct adc_sequence sequence = {
+    .buffer = &buf,
+    /* buffer size in bytes, not number of samples */
+    .buffer_size = sizeof(buf),
+};
+
 /*
 * Sensor Devices
 */
-#define IMU_CHANNELS { SENSOR_CHAN_ACCEL_XYZ, 0}, { SENSOR_CHAN_GYRO_XYZ, 0}             
-
-#define MAGN_CHANNELS { SENSOR_CHAN_MAGN_XYZ, 0}
-
-#define FUELGAUGE_CHANNELS {SENSOR_CHAN_GAUGE_VOLTAGE, 0}, {SENSOR_CHAN_GAUGE_AVG_CURRENT, 0}, {SENSOR_CHAN_GAUGE_STATE_OF_CHARGE, 0}, {SENSOR_CHAN_GAUGE_TIME_TO_EMPTY, 0}    
-
 const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
 const struct device *const imu = DEVICE_DT_GET_ONE(invensense_icm42670);
 const struct device *const magn = DEVICE_DT_GET_ONE(memsic_mmc56x3);
 bool led_state = true;
 
-// Define sensor instances
-SENSOR_DT_READ_IODEV(imu_iodev, DT_NODELABEL(imu0), IMU_CHANNELS);
-SENSOR_DT_READ_IODEV(magn_iodev, DT_NODELABEL(magnetometer0), MAGN_CHANNELS);
-SENSOR_DT_READ_IODEV(fuelgauge_iodev, DT_NODELABEL(fuelgauge0), FUELGAUGE_CHANNELS);
+// IMU orientation
+IMU_Orientation orientation;
 
-// Define sensor buffers
-uint8_t *imu_buf;
-uint8_t *magn_buf;
-uint8_t *fg_buf;
-uint32_t imu_buf_len;
-uint32_t magn_buf_len;
-uint32_t fg_buf_len;
-RTIO_DEFINE_WITH_MEMPOOL(imu_ctx, 2, 2, 12, 8, sizeof(void *));
-RTIO_DEFINE_WITH_MEMPOOL(magn_ctx, 2, 2, 6, 8, sizeof(void *));
-RTIO_DEFINE_WITH_MEMPOOL(fg_ctx, 2, 2, 8, 8, sizeof(void *));
-
-
-// Define finish state
-int imu_rc;
-int mag_rc;
-int fg_rc;
-struct rtio_cqe *imu_cqe;
-struct rtio_cqe *mag_cqe;
-struct rtio_cqe *fg_cqe;
-
-// Define sensor deocoder
-struct sensor_decoder_api *imu_decoder;
-struct sensor_decoder_api *magn_decoder;
-struct sensor_decoder_api *fg_decoder;
+// Define some conversions
+#define MS_PER_HOUR 3600000.0f
 
 /* Sensor Helpers */
 void readIMU();
@@ -525,7 +524,30 @@ void readIMU() {
         sensors.magn[2] = sensor_value_to_float(&mag[2]);
 
         // Update timer
-        magnetometer.timer = k_uptime_get_32();
+        uint32_t now =  k_uptime_get_32();
+        magnetometer.timer = now;
+
+        // Update sensor fusion
+        uint32_t deltaT = (now- sensor_fusion.timer) * 0.001f;
+        sensor_fusion.timer = now;
+
+        // Set Values
+        orientation.setAccelerometerValues(sensors.accl[0], sensors.accl[1], sensors.accl[2]);
+        orientation.setGyroscopeRadianValues(sensors.gyro[0],sensors.gyro[1],sensors.gyro[2], deltaT);
+        orientation.setMagnetometerValues(sensors.magn[0], sensors.magn[1], sensors.magn[2]);
+
+        // Update sensor fusion
+        orientation.update();
+
+        // Get values and store them
+        sensors.ypr[0] = float(orientation.euler.azimuth) * 180.0f / float(M_PI);
+        sensors.ypr[1] = float(orientation.euler.pitch) * 180.0f / float(M_PI);
+        sensors.ypr[2] = float(orientation.euler.roll) * 180.0f / float(M_PI);
+
+        // normalise to 0 - 360
+        for (int i = 0; i < 3; i++) {
+            sensors.ypr[i] = fmodf((360.0f + sensors.ypr[i]),360.0f);
+        }
     }
 }
 
@@ -536,22 +558,23 @@ void updateMIMU() {
     // Perform sensor fusion
     // TODO
 }
- 
+
 // Data from the fuel gauge
 void readBattery() {
     // Read battery stats from fuel gauge
     sensor_sample_fetch(fuelgauge);
 
     // Store battery info
-    struct sensor_value voltage, avg_current, percentage, tte;
+    struct sensor_value voltage, avg_current, percentage, tte, ttf;
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_VOLTAGE, &voltage);
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_AVG_CURRENT,&avg_current);
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_STATE_OF_CHARGE,&percentage);
     sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_TIME_TO_EMPTY,&tte);
+    sensor_channel_get(fuelgauge, SENSOR_CHAN_GAUGE_TIME_TO_FULL,&ttf);
 
     // Save to sensors array
     sensors.battery = sensor_value_to_float(&percentage);
-    sensors.tte = sensor_value_to_float(&tte) / 60.0f;
+    sensors.tte = (sensor_value_to_float(&tte) - sensor_value_to_float(&ttf)) / MS_PER_HOUR; // negative if the battery is charging
     sensors.voltage = sensor_value_to_float(&voltage);
     sensors.current = sensor_value_to_float(&avg_current);
 
@@ -577,7 +600,7 @@ static void osc_loop(void *, void *, void *) {
     osc1 = lo_address_new(OSC_ADDRESS, OSC_PORT);
     LOG_INF("Configured OSC  ...");
 
-    // Check device is ready
+    // Check if sensor device is ready
     if (!device_is_ready(fuelgauge)) {
 		LOG_ERR("fuelgauge: device not ready.\n");
 		return;
@@ -589,6 +612,20 @@ static void osc_loop(void *, void *, void *) {
     if (!device_is_ready(magn)) {
 		LOG_ERR("magnetometer: device not ready.\n");
 		return;
+	}
+
+    /* Configure adc channels individually prior to sampling. */
+	for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
+		if (!adc_is_ready_dt(&adc_channels[i])) {
+			LOG_ERR("ADC controller device %s not ready\n", adc_channels[i].dev->name);
+			return;
+		}
+
+		int err = adc_channel_setup_dt(&adc_channels[i]);
+		if (err < 0) {
+			LOG_ERR("Could not setup channel #%d (%d)\n", i, err);
+			return;
+		}
 	}
 
     // Create a server
@@ -623,6 +660,14 @@ static void osc_loop(void *, void *, void *) {
             battery.timer = k_uptime_get_32();
         } else {
             events.battery = false;
+        }
+
+        // Read ADC and button
+        for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
+            (void)adc_sequence_init_dt(&adc_channels[i], &sequence);
+
+            // Save reading
+            sensors.fsr[i] = (int32_t)buf;
         }
         
         // Get Data from IMU and magnetometer

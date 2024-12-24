@@ -11,6 +11,9 @@ int oscBundle::init(const char *baseName) {
     if (!bundle) {
         return 1; // return 1 on failure
     }
+
+    // Return 0 on success
+    return 0;
 }
 
 int oscBundle::update_message(int i, size_t size, float *data) {

@@ -5,6 +5,40 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+ #include <zephyr/dt-bindings/adc/nxp,gau-adc.h>
+
+/ {
+	zephyr,user {
+		/* adjust channel number according to pinmux in board.dts */
+		io-channels = <&adc0 3 &adc0 4>;
+	};
+};
+
+&adc0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@0 {
+		reg = <0>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_VDD_1";
+		zephyr,vref-mv = <1800>;
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+		zephyr,input-positive = <GAU_ADC_CH0>;
+	};
+
+	channel@1 {
+		reg = <1>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_VDD_1";
+		zephyr,vref-mv = <1800>;
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+		zephyr,input-positive = <GAU_ADC_CH1>;
+	};
+};
+
 &arduino_spi {
     status = "okay";
 
@@ -28,11 +62,11 @@
 		reg = <0x36>;
 		design-voltage = <4200>;
 		desired-voltage = <4200>;
-		desired-charging-current = <1000>;
-		design-cap = <2000>;
+		desired-charging-current = <320>; // end of charge current (50mA * 6.4, to store in register)
+		design-cap = <4000>;   		 	  // design cap (2000mAh * 2, to store in register)
 		empty-voltage = <3300>;
 		recovery-voltage = <3880>;
-		charge-voltage = <3600>;
+		charge-voltage = <4200>;
 		status = "okay";
 	};
 };
@@ -42,10 +76,10 @@
 	magnetometer0: mmc56x3@30 {
 		compatible = "memsic,mmc56x3";
 		reg = <0x30>;
-		magn-odr = <250>;
+		magn-odr = <1000>;
 		bandwidth-selection-bits-0;
 		bandwidth-selection-bits-1;
-		auto-self-reset;
 		status = "okay";
 	};
 };
+
