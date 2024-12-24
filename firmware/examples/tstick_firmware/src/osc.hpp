@@ -27,6 +27,8 @@ class oscBundle {
     public:
         // Liblo bundles
         lo_bundle bundle;
+        char * char_bundle = NULL;
+        size_t data_len;
 
         // Properties
         int num_messages = 0;
@@ -46,6 +48,10 @@ class oscBundle {
         void add(const char *path, float value);
         void add_array(const char *path, int size, int *value);
         void add_array(const char *path, int size,  float *value);
+
+        // Send data
+        void send(lo_address a, lo_server from);
+        void serialise();
 };
 
 #endif

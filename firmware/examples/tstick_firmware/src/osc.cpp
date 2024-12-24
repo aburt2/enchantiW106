@@ -1,5 +1,9 @@
 #include "osc.hpp"
 
+// get send_data function from liblo
+extern "C" int send_data(lo_address a, lo_server from, char *data,
+                     const size_t data_len);
+
 int oscBundle::init(const char *baseName) {
     baseNamespace.append(baseName);
     baseNamespace.append("/");
@@ -102,5 +106,17 @@ void oscBundle::add_array(const char *path, int size,  float *value) {
     }
     lo_bundle_add_message(bundle, oscNamespace.c_str(), tmp_osc);
     num_messages++;
+}
+
+void oscBundle::send(lo_address a, lo_server from) {
+    // Send data
+    char_bundle = (char*) lo_bundle_serialise(bundle, char_bundle, &data_len);
+
+    // Send the bundle
+    lo_send_serialised_bundle_from(a, from, char_bundle, data_len);
+}
+
+void oscBundle::serialise() {
+    lo_bundle_serialise(bundle, char_bundle, &data_len);
 }
 

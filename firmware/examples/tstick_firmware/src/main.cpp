@@ -344,13 +344,11 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
-    start = k_uptime_ticks();
     updateOSC_bundle();
-    end = k_uptime_ticks();
-    sensors.debug[2] = (end-start)*USEC_PER_TICK;
-
+    
+    sensors.debug[2] = k_uptime_ticks();
     if (wifi_enabled && !ap_enabled) {
-        lo_send_bundle_from(osc1, osc_server, puara_bundle.bundle);
+        puara_bundle.send(osc1, osc_server);
     }
 }
 
@@ -684,6 +682,7 @@ static void osc_loop(void *, void *, void *) {
     while(1) {
         // Get data from fuelgauge
         start = k_uptime_ticks();
+        sensors.debug[2] = (start - sensors.debug[2])*USEC_PER_TICK;
         if ((k_uptime_get_32() - battery.timer) > battery.interval) {
             readBattery();
             battery.timer = k_uptime_get_32();
