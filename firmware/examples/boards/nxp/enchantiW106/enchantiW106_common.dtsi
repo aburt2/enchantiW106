@@ -12,7 +12,7 @@
 	aliases {
 		led0 = &orange_led;
 		led1 = &blue_led;
-		btn1 = &front_button;
+		sw0 = &front_button;
 		watchdog0 = &wwdt;
 		usart-0 = &flexcomm3;
 		i2c1 = &flexcomm14;

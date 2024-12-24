@@ -474,6 +474,23 @@ struct adc_sequence sequence = {
 };
 
 /*
+ * Get button configuration from the devicetree sw0 alias. This is mandatory.
+ */
+#define SW0_NODE	DT_ALIAS(sw0)
+#if !DT_NODE_HAS_STATUS_OKAY(SW0_NODE)
+#error "Unsupported board: sw0 devicetree alias is not defined"
+#endif
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
+							      {0});
+static struct gpio_callback button_cb_data;
+
+void button_pressed(const struct device *dev, struct gpio_callback *cb,
+		    uint32_t pins)
+{
+	sensors.count++;
+}
+
+/*
 * Sensor Devices
 */
 const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
@@ -518,10 +535,11 @@ void readIMU() {
         sensor_sample_fetch(magn);
 
         struct sensor_value mag[3];
-        sensor_channel_get(imu, SENSOR_CHAN_MAGN_XYZ,mag);
-        sensors.magn[0] = sensor_value_to_float(&mag[0]);
-        sensors.magn[1] = sensor_value_to_float(&mag[1]);
-        sensors.magn[2] = sensor_value_to_float(&mag[2]);
+        sensor_channel_get(magn, SENSOR_CHAN_MAGN_XYZ,mag);
+        // store in uTesla
+        sensors.magn[0] = sensor_value_to_float(&mag[0]) * 100.0f;
+        sensors.magn[1] = sensor_value_to_float(&mag[1]) * 100.0f;
+        sensors.magn[2] = sensor_value_to_float(&mag[2]) * 100.0f;
 
         // Update timer
         uint32_t now =  k_uptime_get_32();
@@ -546,7 +564,9 @@ void readIMU() {
 
         // normalise to 0 - 360
         for (int i = 0; i < 3; i++) {
-            sensors.ypr[i] = fmodf((360.0f + sensors.ypr[i]),360.0f);
+            if (sensors.ypr[i] < 0) {
+                sensors.ypr[i] = 360.0f + sensors.ypr[i];
+            }
         }
     }
 }
@@ -605,14 +625,17 @@ static void osc_loop(void *, void *, void *) {
 		LOG_ERR("fuelgauge: device not ready.\n");
 		return;
 	}
+    LOG_INF("Configured Fuel Gauge  ...");
     if (!device_is_ready(imu)) {
 		LOG_ERR("imu: device not ready.\n");
 		return;
 	}
+    LOG_INF("Configured IMU  ...");
     if (!device_is_ready(magn)) {
 		LOG_ERR("magnetometer: device not ready.\n");
 		return;
 	}
+    LOG_INF("Configured Magnetometer  ...");
 
     /* Configure adc channels individually prior to sampling. */
 	for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
@@ -627,6 +650,12 @@ static void osc_loop(void *, void *, void *) {
 			return;
 		}
 	}
+    LOG_INF("Configured ADC  ...");
+
+    // Initialise Button
+    gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+    LOG_INF("Configured Buttons  ...");
 
     // Create a server
     osc_server = lo_server_new("8000", error);
@@ -662,7 +691,7 @@ static void osc_loop(void *, void *, void *) {
             events.battery = false;
         }
 
-        // Read ADC and button
+        // Read ADC
         for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
             (void)adc_sequence_init_dt(&adc_channels[i], &sequence);
 

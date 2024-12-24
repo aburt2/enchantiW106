@@ -10,7 +10,7 @@
 / {
 	zephyr,user {
 		/* adjust channel number according to pinmux in board.dts */
-		io-channels = <&adc0 3 &adc0 4>;
+		io-channels = <&adc0 3>, <&adc0 4>;
 	};
 };
 
@@ -18,24 +18,24 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	channel@0 {
-		reg = <0>;
+	channel@3 {
+		reg = <3>;
 		zephyr,gain = "ADC_GAIN_1";
 		zephyr,reference = "ADC_REF_VDD_1";
-		zephyr,vref-mv = <1800>;
+		zephyr,vref-mv = <3300>;
 		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
 		zephyr,resolution = <16>;
-		zephyr,input-positive = <GAU_ADC_CH0>;
+		zephyr,input-positive = <GAU_ADC_CH3>;
 	};
 
-	channel@1 {
-		reg = <1>;
+	channel@4 {
+		reg = <4>;
 		zephyr,gain = "ADC_GAIN_1";
 		zephyr,reference = "ADC_REF_VDD_1";
-		zephyr,vref-mv = <1800>;
+		zephyr,vref-mv = <3300>;
 		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
 		zephyr,resolution = <16>;
-		zephyr,input-positive = <GAU_ADC_CH1>;
+		zephyr,input-positive = <GAU_ADC_CH4>;
 	};
 };
 
