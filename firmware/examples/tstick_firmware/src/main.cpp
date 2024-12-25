@@ -498,9 +498,10 @@ bool led_state = true;
 
 // IMU orientation
 IMU_Orientation orientation;
-
+float accelg[3];
 // Define some conversions
 #define MS_PER_HOUR 3600000.0f
+#define GRAVITY 0.101971621297793f // conversion from ms2 to gs
 
 /* Sensor Helpers */
 void readIMU();
@@ -509,7 +510,17 @@ void readAnalog();
 void readBattery();
 void changeLED();
 void updateMIMU();
-void readSensor();
+float normDegree(float val);
+
+void readAnalog() {
+    // Read analog sensor
+    for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
+        (void)adc_sequence_init_dt(&adc_channels[i], &sequence);
+
+        // Save reading
+        sensors.fsr[i] = (int32_t)buf;
+    }
+}
 
 void readIMU() {
     // Read data from IMU
@@ -521,12 +532,17 @@ void readIMU() {
     sensor_channel_get(imu, SENSOR_CHAN_GYRO_XYZ,gyro);
 
     // Save data to sensor array
-    sensors.accl[0] = sensor_value_to_float(&accel[0]);
-    sensors.accl[1] = sensor_value_to_float(&accel[1]);
-    sensors.accl[2] = sensor_value_to_float(&accel[2]);
+    sensors.accl[0] = -sensor_value_to_float(&accel[0]);
+    sensors.accl[1] = sensor_value_to_float(&accel[1]); // fix axis orientation
+    sensors.accl[2] = sensor_value_to_float(&accel[2]); // have gravity pointing down
     sensors.gyro[0] = sensor_value_to_float(&gyro[0]);
     sensors.gyro[1] = sensor_value_to_float(&gyro[1]);
     sensors.gyro[2] = sensor_value_to_float(&gyro[2]);
+    
+    // Also save accel data in gs for sensor fusion
+    accelg[0] = -sensor_ms2_to_g(&accel[0]);
+    accelg[1] = sensor_ms2_to_g(&accel[1]);
+    accelg[2] = sensor_ms2_to_g(&accel[2]);
 
     // Read magnetometer at specified rate
     if ((k_uptime_get_32() - magnetometer.timer) > magnetometer.interval) {
@@ -535,8 +551,8 @@ void readIMU() {
         struct sensor_value mag[3];
         sensor_channel_get(magn, SENSOR_CHAN_MAGN_XYZ,mag);
         // store in uTesla
-        sensors.magn[0] = sensor_value_to_float(&mag[0]) * 100.0f;
-        sensors.magn[1] = sensor_value_to_float(&mag[1]) * 100.0f;
+        sensors.magn[0] = sensor_value_to_float(&mag[0]) * 100.0f; // x axis of T-Stick is the Y Axis of the magnetomer
+        sensors.magn[1] = sensor_value_to_float(&mag[1]) * 100.0f; // y axis of T-Stick is the x Axis of the magnetomer
         sensors.magn[2] = sensor_value_to_float(&mag[2]) * 100.0f;
 
         // Update timer
@@ -545,16 +561,27 @@ void readIMU() {
     }
 }
 
-void updateMIMU() {
-    // Read IMU data
-    readIMU();
+float normDegree(float val) {
+    // Normalise degrees from -180,180 to 0,360 degrees
+    float out = fmodf(val, 360.0f);
+    if (out < 0) out += 360.0f;
+    return out;
+}
 
-    // Perform sensor fusion
-    if (events.mag) {
+void updateMIMU() {
+    // Update my data, at least 1kHz
+    if (k_uptime_get_32() - sensor_fusion.timer > 0) {
+        // Read IMU data
+        readIMU();
+
         // Update sensor fusion
         uint32_t deltaT = (k_uptime_get_32() - sensor_fusion.timer) * 0.001f;
-        
-        // Set Values
+
+        // Perform sensor fusion
+        orientation.setAccelerometerValues(accelg[0], accelg[1], accelg[2]);
+        orientation.setGyroscopeRadianValues(sensors.gyro[0],sensors.gyro[1],sensors.gyro[2], deltaT);
+        orientation.setMagnetometerValues(sensors.magn[0], sensors.magn[1], sensors.magn[2]);
+
         orientation.setAccelerometerValues(sensors.accl[0], sensors.accl[1], sensors.accl[2]);
         orientation.setGyroscopeRadianValues(sensors.gyro[0],sensors.gyro[1],sensors.gyro[2], deltaT);
         orientation.setMagnetometerValues(sensors.magn[0], sensors.magn[1], sensors.magn[2]);
@@ -562,16 +589,20 @@ void updateMIMU() {
         // Update sensor fusion
         orientation.update();
 
-        // Get values and store them
-        sensors.ypr[0] = float(orientation.euler.azimuth) * 180.0f / float(M_PI);
-        sensors.ypr[1] = float(orientation.euler.pitch) * 180.0f / float(M_PI);
-        sensors.ypr[2] = float(orientation.euler.roll) * 180.0f / float(M_PI);
+        sensors.ypr[0] = orientation.euler.azimuth * 180.0f / M_PIF;
+        sensors.ypr[1] = orientation.euler.pitch * 180.0f / M_PIF;
+        sensors.ypr[2] = orientation.euler.roll * 180.0f / M_PIF;
 
-        // normalise to 0 - 360
+        // normalise roll and heading to 0 - 360
+        sensors.ypr[0] = normDegree(sensors.ypr[0]);
+        sensors.ypr[2] = normDegree(sensors.ypr[2]);
+
+        // Clean up float precision (round to 1 decimal place)
         for (int i = 0; i < 3; i++) {
-            sensors.ypr[i] = fmodf(sensors.ypr[i], 360.0f);
-            if (sensors.ypr[i] < 0) sensors.ypr[i] += 360.0f;
+            sensors.ypr[i] = roundf(sensors.ypr[i] * 10) / 10;
         }
+
+        // Update sensor fusion timer
         sensor_fusion.timer = k_uptime_get_32();;
         events.mag = false;
     }
@@ -691,13 +722,8 @@ static void osc_loop(void *, void *, void *) {
         }
 
         // Read ADC
-        for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
-            (void)adc_sequence_init_dt(&adc_channels[i], &sequence);
+        readAnalog();
 
-            // Save reading
-            sensors.fsr[i] = (int32_t)buf;
-        }
-        
         // Get Data from IMU and magnetometer
         updateMIMU();
 
