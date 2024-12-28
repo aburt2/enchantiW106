@@ -15978,6 +15978,25 @@
 		)
 		(uuid "d2646f3e-d53f-49aa-8fd4-5b14d534722d")
 	)
+	(text_box "Move button to pin F3 for deep sleep wakeup"
+		(exclude_from_sim no)
+		(at 128.27 125.73 0)
+		(size 13.97 12.7)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "e5c01d97-bd51-402f-af85-44f8d2af819d")
+	)
 	(text_box "Move this LED to the 3.3V power"
 		(exclude_from_sim no)
 		(at 289.56 170.18 0)

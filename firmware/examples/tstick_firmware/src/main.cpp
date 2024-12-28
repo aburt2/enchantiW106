@@ -22,6 +22,10 @@
 #include <zephyr/shell/shell_uart.h>
 #include <errno.h>
 
+// Power management
+#include <zephyr/pm/pm.h>
+#include <zephyr/pm/policy.h>
+
 // Liblo headers for OSC
 #include <charconv>
 #include <string>
@@ -34,6 +38,9 @@
 #include "imu_orientation.h"
 #include <cmath>
 
+// Sensors
+#include "enchanti_touch.h"
+
 // Logger
 LOG_MODULE_REGISTER(MAIN);
 
@@ -41,7 +48,7 @@ LOG_MODULE_REGISTER(MAIN);
 #define SLEEP_TIME_MS   1000
 #define LOG_RATE_MS     5000
 #define BOOT_UP_DELAY_MS 500
-#define OSC_RATE_TICKS 10
+#define OSC_RATE_TICKS 100
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 #define SEC_PER_TICK float(USEC_PER_TICK) / 1000000.0f
 
@@ -257,7 +264,7 @@ int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TSTICK_SIZE 120
+#define TSTICK_SIZE 60
 
 std::string baseNamespace = "/";
 std::string oscNamespace;
@@ -299,6 +306,8 @@ struct Sensors {
 struct Events {
     bool battery;
     bool mag;
+    bool button_pressed;
+    bool button_held;
 } events;
 
 //////////////////////////////////
@@ -315,6 +324,8 @@ struct sensor_timers battery(5000);
 struct sensor_timers magnetometer(4);
 struct sensor_timers led(SLEEP_TIME_MS);
 struct sensor_timers sensor_fusion(1);
+struct sensor_timers debounce(25);
+struct sensor_timers button_hold(5000);
 
 // OSC Helpers
 void error(int num, const char *msg, const char *path);
@@ -439,6 +450,7 @@ void updateOSC_bundle() {
 // /* The devicetree node identifier for the "led0" alias. */
 #define ORANGELED_NODE DT_ALIAS(led0)
 #define BLUELED_NODE DT_ALIAS(led1)
+#define LDOEN_NODE DT_ALIAS(ldoen1)
 
 /*
  * A build error on this line means your board is unsupported.
@@ -446,6 +458,7 @@ void updateOSC_bundle() {
  */
 static const struct gpio_dt_spec orange_led = GPIO_DT_SPEC_GET(ORANGELED_NODE, gpios);
 static const struct gpio_dt_spec blue_led = GPIO_DT_SPEC_GET(BLUELED_NODE, gpios);
+static const struct gpio_dt_spec ldo_en = GPIO_DT_SPEC_GET(LDOEN_NODE, gpios);
 
 
 /* ADC Config from devicetree */
@@ -485,7 +498,8 @@ static struct gpio_callback button_cb_data;
 void button_pressed(const struct device *dev, struct gpio_callback *cb,
 		    uint32_t pins)
 {
-	sensors.count++;
+    if (!events.button_pressed) button_hold.timer = k_uptime_get_32();
+	events.button_pressed = true;
 }
 
 /*
@@ -494,17 +508,29 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
 const struct device *const imu = DEVICE_DT_GET_ONE(invensense_icm42670);
 const struct device *const magn = DEVICE_DT_GET_ONE(memsic_mmc56x3);
+EnchantiTouch touch;
+enchanti_touch_config tstick_touchconfig = {
+    -1, // default use the trill craft device
+    ENCHANTI_BASETOUCHSIZE, // default touch size
+    0, // noise threshold
+    Mode::DIFF, // touch processing mode
+    COMMS::I2C_MODE, // comm mode 
+};
+
 bool led_state = true;
+
 
 // IMU orientation
 IMU_Orientation orientation;
 float accelg[3];
 // Define some conversions
 #define MS_PER_HOUR 3600000.0f
-#define GRAVITY 0.101971621297793f // conversion from ms2 to gs
+#define MS2_TO_G 1.0f/9.8f // conversion from ms2 to gs
+#define RAD_TO_DEGREES 180.0f / M_PIF
 
 /* Sensor Helpers */
 void readIMU();
+void readButton();
 void readTouch();
 void readAnalog();
 void readBattery();
@@ -512,13 +538,63 @@ void changeLED();
 void updateMIMU();
 float normDegree(float val);
 
+void readButton() {
+    // Check if debounce time had passed
+    uint32_t now = k_uptime_get_32();
+    if (now - debounce.timer < debounce.interval) return; // if debounce hasn't passed do not bother
+    debounce.timer = now;
+
+    // Read button
+    int val = gpio_pin_get_dt(&button);
+
+    if (val == 1) {
+        // We are holding the button
+        if ((now - button_hold.timer) > button_hold.interval) {
+            events.button_held = true;
+        }
+    } else if (events.button_pressed) {
+        // We have released the button
+        if (events.button_held || events.button_pressed) {
+            events.button_held = false;
+            events.button_pressed = false;
+        }
+        sensors.count++;
+    }
+}
+
 void readAnalog() {
     // Read analog sensor
     for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
         (void)adc_sequence_init_dt(&adc_channels[i], &sequence);
+        int err;
+        err = adc_read_dt(&adc_channels[i], &sequence);
+        if (err < 0) {
+            LOG_ERR("Could not read (%d)\n", err);
+            continue;
+        }
 
-        // Save reading
-        sensors.fsr[i] = (int32_t)buf;
+        /*
+        * If using differential mode, the 16 bit value
+        * in the ADC sample buffer should be a signed 2's
+        * complement value.
+        */
+        if (adc_channels[i].channel_cfg.differential) {
+            sensors.fsr[i] = (int32_t)((int16_t)buf);
+        } else {
+            sensors.fsr[i] = (int32_t)buf;
+        }
+    }
+}
+
+void readTouch() {
+    // Read touch data
+    touch.readTouch();
+    touch.cookData();
+
+    // Store in arrays for sensing
+    for (int i = 0; i < TSTICK_SIZE; ++i) {
+        sensors.mergedtouch[i] = touch.touch[i];
+        sensors.mergeddiscretetouch[i] = touch.discreteTouch[i];
     }
 }
 
@@ -534,15 +610,15 @@ void readIMU() {
     // Save data to sensor array
     sensors.accl[0] = -sensor_value_to_float(&accel[0]);
     sensors.accl[1] = sensor_value_to_float(&accel[1]); // fix axis orientation
-    sensors.accl[2] = sensor_value_to_float(&accel[2]); // have gravity pointing down
+    sensors.accl[2] = sensor_value_to_float(&accel[2]);
     sensors.gyro[0] = sensor_value_to_float(&gyro[0]);
     sensors.gyro[1] = sensor_value_to_float(&gyro[1]);
     sensors.gyro[2] = sensor_value_to_float(&gyro[2]);
     
     // Also save accel data in gs for sensor fusion
-    accelg[0] = -sensor_ms2_to_g(&accel[0]);
-    accelg[1] = sensor_ms2_to_g(&accel[1]);
-    accelg[2] = sensor_ms2_to_g(&accel[2]);
+    accelg[0] = sensors.accl[0] * MS2_TO_G;
+    accelg[1] = sensors.accl[1] * MS2_TO_G;
+    accelg[2] = sensors.accl[2] * MS2_TO_G;
 
     // Read magnetometer at specified rate
     if ((k_uptime_get_32() - magnetometer.timer) > magnetometer.interval) {
@@ -551,8 +627,8 @@ void readIMU() {
         struct sensor_value mag[3];
         sensor_channel_get(magn, SENSOR_CHAN_MAGN_XYZ,mag);
         // store in uTesla
-        sensors.magn[0] = sensor_value_to_float(&mag[0]) * 100.0f; // x axis of T-Stick is the Y Axis of the magnetomer
-        sensors.magn[1] = sensor_value_to_float(&mag[1]) * 100.0f; // y axis of T-Stick is the x Axis of the magnetomer
+        sensors.magn[0] = sensor_value_to_float(&mag[1]) * 100.0f; // x axis of T-Stick is the Y Axis of the magnetomer
+        sensors.magn[1] = sensor_value_to_float(&mag[0]) * 100.0f; // y axis of T-Stick is the x Axis of the magnetomer
         sensors.magn[2] = sensor_value_to_float(&mag[2]) * 100.0f;
 
         // Update timer
@@ -563,9 +639,8 @@ void readIMU() {
 
 float normDegree(float val) {
     // Normalise degrees from -180,180 to 0,360 degrees
-    float out = fmodf(val, 360.0f);
-    if (out < 0) out += 360.0f;
-    return out;
+    if (val < 0) val += 360.0f;
+    return val;
 }
 
 void updateMIMU() {
@@ -589,12 +664,11 @@ void updateMIMU() {
         // Update sensor fusion
         orientation.update();
 
-        sensors.ypr[0] = orientation.euler.azimuth * 180.0f / M_PIF;
-        sensors.ypr[1] = orientation.euler.pitch * 180.0f / M_PIF;
-        sensors.ypr[2] = orientation.euler.roll * 180.0f / M_PIF;
+        sensors.ypr[0] = orientation.euler.azimuth * RAD_TO_DEGREES;
+        sensors.ypr[1] = orientation.euler.pitch * RAD_TO_DEGREES;
+        sensors.ypr[2] = orientation.euler.roll * RAD_TO_DEGREES;
 
         // normalise roll and heading to 0 - 360
-        sensors.ypr[0] = normDegree(sensors.ypr[0]);
         sensors.ypr[2] = normDegree(sensors.ypr[2]);
 
         // Clean up float precision (round to 1 decimal place)
@@ -666,6 +740,14 @@ static void osc_loop(void *, void *, void *) {
 	}
     LOG_INF("Configured Magnetometer  ...");
 
+    // Init touch
+    int err = touch.initTouch(tstick_touchconfig);
+    if (err == 0) {
+        LOG_ERR("touch: device not ready.\n");
+        return;
+    }
+    LOG_INF("Configured Touch sensor  ...");
+
     /* Configure adc channels individually prior to sampling. */
 	for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
 		if (!adc_is_ready_dt(&adc_channels[i])) {
@@ -678,13 +760,8 @@ static void osc_loop(void *, void *, void *) {
 			LOG_ERR("Could not setup channel #%d (%d)\n", i, err);
 			return;
 		}
+        LOG_INF("Configured ADC %s ...", adc_channels[i].dev->name);
 	}
-    LOG_INF("Configured ADC  ...");
-
-    // Initialise Button
-    gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
-	gpio_add_callback(button.port, &button_cb_data);
-    LOG_INF("Configured Buttons  ...");
 
     // Create a server
     osc_server = lo_server_new("8000", error);
@@ -720,9 +797,14 @@ static void osc_loop(void *, void *, void *) {
         } else {
             events.battery = false;
         }
-
+        // Read Button
+        readButton();
+        
         // Read ADC
         readAnalog();
+
+        // Read touch
+        readTouch();
 
         // Get Data from IMU and magnetometer
         updateMIMU();
@@ -754,8 +836,34 @@ struct k_thread osc_thread_data;
 /********* MAIN **********/
 int main(void)
 {
+    // Error variable
+    int ret;
+
+    // Initialise Button
+    if (!gpio_is_ready_dt(&button)) {
+		LOG_ERR("Error: button device %s is not ready\n",
+		       button.port->name);
+		return 1;
+	}
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		LOG_ERR("Error %d: failed to configure %s pin %d\n",
+		       ret, button.port->name, button.pin);
+		return ret;
+    }
+
+    ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret != 0) {
+		LOG_ERR("Error %d: failed to configure interrupt on %s pin %d\n",
+			ret, button.port->name, button.pin);
+		return ret;
+	}
+    gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+    LOG_INF("Configured Buttons  ...");
+
     // Wait for wifi network manager to be initialised
-    k_msleep(5000);
+    k_msleep(BOOT_UP_DELAY_MS);
 
     // Turn on Orange LED
     if (!gpio_is_ready_dt(&orange_led)) {
@@ -763,7 +871,6 @@ int main(void)
         return 1;
     }
 
-    int ret;
     ret = gpio_pin_configure_dt(&orange_led, GPIO_OUTPUT_ACTIVE);
     if (ret < 0) {
         LOG_INF("FAILED ORANGE LED CONFIGURATION\n");
@@ -781,6 +888,14 @@ int main(void)
         return 1;
     }
     LOG_INF("Configured LED");
+
+    // Enable LDO
+    ret = gpio_pin_configure_dt(&ldo_en, GPIO_OUTPUT_ACTIVE);
+    if (ret < 0) {
+        LOG_INF("FAILED LDO CONFIGURATION\n");
+        return 1;
+    }
+    LOG_INF("Configured LDO");
 
     // Adding network call back events
     net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);

@@ -12,6 +12,7 @@
 	aliases {
 		led0 = &orange_led;
 		led1 = &blue_led;
+		ldoen1 = &ldo_en;
 		sw0 = &front_button;
 		watchdog0 = &wwdt;
 		usart-0 = &flexcomm3;
@@ -45,6 +46,9 @@
 		};
 		ext_led3: led_5 {
 			gpios = <&hsgpio1 29 GPIO_ACTIVE_HIGH>;
+		};
+		ldo_en: led_6 {
+			gpios = <&hsgpio0 27 GPIO_ACTIVE_HIGH>;
 		};
 	};
 
