@@ -592,10 +592,8 @@ void readTouch() {
     touch.cookData();
 
     // Store in arrays for sensing
-    for (int i = 0; i < TSTICK_SIZE; ++i) {
-        sensors.mergedtouch[i] = touch.touch[i];
-        sensors.mergeddiscretetouch[i] = touch.discreteTouch[i];
-    }
+    memcpy(sensors.mergedtouch, touch.touch, sizeof(int) * TSTICK_SIZE);
+    memcpy(sensors.mergeddiscretetouch, touch.discreteTouch, sizeof(int) * TSTICK_SIZE);
 }
 
 void readIMU() {
