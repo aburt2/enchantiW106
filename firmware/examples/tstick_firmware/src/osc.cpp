@@ -1,4 +1,9 @@
 #include "osc.hpp"
+#include <zephyr/kernel.h>
+#include <zephyr/shell/shell.h>
+#include <zephyr/shell/shell_uart.h>
+// Logger
+LOG_MODULE_REGISTER(OSC);
 
 // get send_data function from liblo
 extern "C" int send_data(lo_address a, lo_server from, char *data,
@@ -173,13 +178,91 @@ void oscBundle::add_array(const char *path, size_t size,  float *value) {
 
 void oscBundle::send(lo_address a, lo_server from) {
     // Send data
-    char_bundle = (char*) lo_bundle_serialise(bundle, char_bundle, &data_len);
-
-    // Send the bundle
-    lo_send_serialised_bundle_from(a, from, char_bundle, data_len);
+    if (serialise()) {
+        // Send the bundle
+        lo_send_serialised_bundle_from(a, from, char_bundle, data_len);
+    }
 }
 
-void oscBundle::serialise() {
-    lo_bundle_serialise(bundle, char_bundle, &data_len);
+int oscBundle::serialise() {
+    if (data_len > MAX_BUNDLE_SIZE) {
+        return 0;
+    }
+    lo_bundle_serialise_fast(bundle, &char_bundle, &data_len);
+    return 1;
 }
 
+int oscBundle::serialise_message(int idx, void *pos) {
+    size_t msg_len;
+    lo_message_serialise(bundle->elmnts[idx].content.message.msg, bundle->elmnts[idx].content.message.path, pos, &msg_len);
+    return 1;
+}
+
+
+
+void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
+{
+    size_t s, skip;
+    int32_t *bes;
+    size_t i;
+    char *pos;
+    lo_pcast32 be;
+
+    if (!b) {
+        if (size)
+            *size = 0;
+        return NULL;
+    }
+
+    s = lo_bundle_length(b);
+    if (size) {
+        *size = s;
+    }
+
+    if (!to) {
+        to = calloc(1, s);
+        LOG_INF("Allocated %d bytes to bundle: ", s);
+    }
+
+    pos = (char*) to;
+    strcpy(pos, "#bundle");
+    pos += 8;
+
+    be.nl = lo_htoo32(b->ts.sec);
+    memcpy(pos, &be, 4);
+    pos += 4;
+    be.nl = lo_htoo32(b->ts.frac);
+    memcpy(pos, &be, 4);
+    pos += 4;
+    
+    for (i = 0; i < b->len; i++) {
+	switch (b->elmnts[i].type) {
+	    case LO_ELEMENT_MESSAGE:
+		lo_message_serialise(b->elmnts[i].content.message.msg, b->elmnts[i].content.message.path, pos + 4, &skip);
+		break;
+	    case LO_ELEMENT_BUNDLE:
+		lo_bundle_serialise(b->elmnts[i].content.bundle, pos+4, &skip);
+		break;
+	}
+
+	bes = (int32_t *) (void *)pos;
+	*bes = lo_htoo32(skip);
+	pos += skip + 4;
+
+	if (pos > (char*) to + s) {
+            fprintf(stderr, "liblo: data integrity error at message %lu\n",
+                    (long unsigned int)i);
+
+	    return NULL;
+	}
+    }
+    if (pos != (char*) to + s) {
+        fprintf(stderr, "liblo: data integrity error\n");
+        if (to) {
+            free(to);
+        }
+        return NULL;
+    }
+
+    return to;
+}

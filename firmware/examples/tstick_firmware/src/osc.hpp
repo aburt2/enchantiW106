@@ -7,6 +7,8 @@
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 
+#define MAX_BUNDLE_SIZE 2048
+
 class message_data {
     public:
         lo_type msg_type;
@@ -63,13 +65,19 @@ class message_data {
         }
 };
 
+// OSC helper
+void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size);
+
 // Bundle
 class oscBundle {
     public:
         // Liblo bundles
         lo_bundle bundle;
-        char * char_bundle = NULL;
+        char char_bundle[MAX_BUNDLE_SIZE];
+        std::string str_bundle = "#bundle";
+        int idx;
         size_t data_len;
+        bool first_time = true;
 
         // Properties
         int num_messages = 0;
@@ -96,7 +104,8 @@ class oscBundle {
 
         // Send data
         void send(lo_address a, lo_server from);
-        void serialise();
+        int serialise();
+        int serialise_message(int idx, void *pos);
 };
 
 #endif
