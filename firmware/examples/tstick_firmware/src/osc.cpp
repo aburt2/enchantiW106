@@ -1,13 +1,4 @@
 #include "osc.hpp"
-#include <zephyr/kernel.h>
-#include <zephyr/shell/shell.h>
-#include <zephyr/shell/shell_uart.h>
-// Logger
-LOG_MODULE_REGISTER(OSC);
-
-// get send_data function from liblo
-extern "C" int send_data(lo_address a, lo_server from, char *data,
-                     const size_t data_len);
 
 int oscBundle::init(const char *baseName) {
     baseNamespace.append(baseName);
@@ -111,6 +102,7 @@ void oscBundle::add(const char *path, lo_message msg) {
         return;
     }
     msg_size[num_messages] = lo_strsize(path) + lo_strsize(msg->types);
+    msg_length[num_messages] = lo_message_length(msg, path);
     num_messages++;
 }
 
@@ -216,7 +208,7 @@ int oscBundle::serialise_message(int idx, void *pos) {
     return 1;
 }
 
-void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
+int oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
 {
     size_t s, skip;
     int32_t *bes;
@@ -225,9 +217,8 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
     lo_pcast32 be;
 
     if (!b) {
-        if (size)
-            *size = 0;
-        return NULL;
+        if (size) *size = 0;
+        return -LO_EINVALIDBUND;
     }
 
     if (data_len == 0) {
@@ -240,14 +231,13 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
     }
 
     if (!to) {
-        to = calloc(1, s);
+        return -LO_EINVALIDARG;
     }
     
     pos = (char*) to;
     if (first_time) {
         strcpy(pos, "#bundle");
         pos += 8;
-
         be.nl = lo_htoo32(b->ts.sec);
         memcpy(pos, &be, 4);
         pos += 4;
@@ -273,22 +263,20 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
         pos += skip + 4;
 
         if (pos > (char*) to + s) {
-            LOG_ERR("liblo: data integrity error at message %lu", (long unsigned int)i);
-            return NULL;
+            return -LO_EINVALIDBUND;
         }
     }
     if (pos != (char*) to + s) {
-        LOG_ERR("liblo: data integrity error");
-        return NULL;
+        return -LO_EINVALIDBUND;
     }
-    return to;
+    return 1;
 }
 
-void *oscBundle::lo_message_serialise_fast(int msg_idx, lo_message m, const char *path, void *to, size_t * size)
+int oscBundle::lo_message_serialise_fast(int msg_idx, lo_message m, const char *path, void *to, size_t * size)
 {
     int argc;
     char *ptr;
-    size_t s = lo_message_length(m, path);
+    size_t s = msg_length[msg_idx];
 
     if (size) {
         *size = s;
@@ -311,7 +299,7 @@ void *oscBundle::lo_message_serialise_fast(int msg_idx, lo_message m, const char
 
     argc = (int) m->typelen - 1;
     fast_reorder(argc, ptr);
-    return to;
+    return 1;
 }
 
 inline void fast_reorder(int num, void *data) {
