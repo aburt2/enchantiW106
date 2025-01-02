@@ -280,7 +280,7 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
     return to;
 }
 
-void *oscBundle::lo_message_serialise_fast(int msg_len, lo_message m, const char *path, void *to, size_t * size)
+void *oscBundle::lo_message_serialise_fast(int msg_idx, lo_message m, const char *path, void *to, size_t * size)
 {
     int i, argc;
     char *ptr;
@@ -302,7 +302,7 @@ void *oscBundle::lo_message_serialise_fast(int msg_len, lo_message m, const char
             4);
         strcpy((char*) to + lo_strsize(path), m->types);
     }
-    ptr = (char*) to + msg_len;
+    ptr = (char*) to + msg_size[msg_idx];
     memcpy(ptr, m->data, m->datalen);
 
     argc = (int) m->typelen - 1;
@@ -312,7 +312,7 @@ void *oscBundle::lo_message_serialise_fast(int msg_len, lo_message m, const char
 
 inline void fast_reorder(int num, void *data) {
     for (int i = 0; i < num; ++i) {
-        *(int32_t *) data = __REV(*(int32_t *) data);
+        *(int32_t *) data = __builtin_bswap32(*(int32_t *) data);
         data += 4;
     }
 }

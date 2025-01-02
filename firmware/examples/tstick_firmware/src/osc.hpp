@@ -110,7 +110,7 @@ class oscBundle {
         int fast_serialise();
         int serialise_message(int idx, void *pos);
         void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size);
-        void *lo_message_serialise_fast(int i, lo_message m, const char *path, void *to, size_t * size);
+        void *lo_message_serialise_fast(int msg_idx, lo_message m, const char *path, void *to, size_t * size);
 
         // Send data
         void send(lo_address a, lo_server from);
