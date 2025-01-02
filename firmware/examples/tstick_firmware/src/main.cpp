@@ -917,6 +917,7 @@ int main(void)
         readAnalog();
 
         // Read touch
+        // TODO: use non blocking i2c call
         readTouch();
 
         // Get Data from IMU and magnetometer
@@ -967,4 +968,10 @@ int main(void)
     //     // sleep a biy
     //     k_yield();
     // }
+
+    // NOtes for Performance
+    // Sending OSC data ~= 160 - 300us
+    // IMU sensor fusion + data gathering ~= 300us
+    // ADC ~= 100us
+    // Readfing touch ~= 1000us
 }
