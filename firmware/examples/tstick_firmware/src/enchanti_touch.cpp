@@ -142,27 +142,26 @@ void EnchantiTouch::cookData() {
 
 void EnchantiTouch::readI2CBuffer(uint8_t i2c_addr, uint8_t reg, uint8_t length, int offset)
 {
-    // prepare for data read
-    uint8_t loc = 0;
-    uint16_t value = 0;  
-
     // Read multiple bytes
     i2c_burst_read(com_dev, i2c_addr, reg, buf, length);
 
     // Read the available data
-    int i = 0;
-    while (i < (length-1)) {
-        // Read two bytes for each sensor
-        uint8_t lsb  = buf[i];
-        uint8_t msb  = buf[i+1];
-        value = lsb + (msb << 8);
-        if (data[loc + offset] != value) {
-            newData = 1;
-            data[loc + offset] = value;
-        }
-        ++loc;
-        i += 2;
-    }
+    memcpy(data, buf, sizeof(uint8_t)*length);
+    // uint8_t loc = 0;
+    // uint16_t value = 0;  
+    // int i = 0;
+    // while (i < (length-1)) {
+    //     // Read two bytes for each sensor
+    //     uint8_t lsb  = buf[i];
+    //     uint8_t msb  = buf[i+1];
+    //     value = (msb << 8) | lsb;
+    //     if (data[loc + offset] != value) {
+    //         newData = 1;
+    //         data[loc + offset] = value;
+    //     }
+    //     ++loc;
+    //     i += 2;
+    // }
 }
 
 void EnchantiTouch::readSPIBuffer(uint16_t length, int offset)

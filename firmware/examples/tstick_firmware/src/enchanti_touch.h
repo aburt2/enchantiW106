@@ -58,7 +58,7 @@ class EnchantiTouch: public Touch<enchanti_touch_config>
         // Touch arrays
         uint8_t buf[240];
         uint16_t data[120];
-        uint16_t touch[120];
+        int touch[120];
         int normTouch[120];
         int discreteTouch[120];
 
