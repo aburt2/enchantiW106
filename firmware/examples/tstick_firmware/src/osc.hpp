@@ -115,6 +115,7 @@ class oscBundle {
 
         // Send data
         void send(lo_address a, lo_server from);
+        void fast_send(lo_address a, lo_server from);
 };
 
 #endif

@@ -171,11 +171,20 @@ void oscBundle::add_array(const char *path, size_t size,  float *value) {
 
 void oscBundle::send(lo_address a, lo_server from) {
     // Send data
+    if (serialise()) {
+        // Send the bundle
+        lo_send_serialised_bundle_from(a, from, char_bundle, data_len);
+    }
+}
+
+void oscBundle::fast_send(lo_address a, lo_server from) {
+    // Send data
     if (fast_serialise()) {
         // Send the bundle
         lo_send_serialised_bundle_from(a, from, char_bundle, data_len);
     }
 }
+
 
 int oscBundle::serialise() {
     if (data_len > MAX_BUNDLE_SIZE) {

@@ -356,11 +356,14 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
+    start = k_cycle_get_32();
     updateOSC_bundle();
     
     if (wifi_enabled && !ap_enabled) {
-        puara_bundle.send(osc1, osc_server);
+        puara_bundle.fast_send(osc1, osc_server);
     }
+    end = k_cycle_get_32();
+    sensors.debug[2] = k_cyc_to_us_ceil32(end - start);
 }
 
 void initOSC_bundle() {
@@ -898,72 +901,70 @@ int main(void)
     // Serialise the bundle once
     puara_bundle.serialise();
 
-    // Tester
-    int num_loops = 1000;
-
-    // Test serialisation speed
     while(1) {
-        // Test serialise speed
-        start = k_uptime_ticks();
-        for (int i = 0; i < num_loops; i++) {
-            puara_bundle.fast_serialise();
+        // Get data from fuelgauge
+        start = k_cycle_get_32();
+        if ((k_uptime_get_32() - battery.timer) > battery.interval) {
+            readBattery();
+            battery.timer = k_uptime_get_32();
+        } else {
+            events.battery = false;
         }
-        end = k_uptime_ticks();
-        sensors.debug[1] = ((end - start) * USEC_PER_TICK) / num_loops;
-        LOG_INF("Serialising time: %d", sensors.debug[1]);
-        // Test updating speed
-        start = k_uptime_ticks();
-        for (int i = 0; i < num_loops; i++) {
-            updateOSC();
-        }
-        end = k_uptime_ticks();
-        sensors.debug[2] = ((end - start) * USEC_PER_TICK) / num_loops;
-        sensors.debug[2] = sensors.debug[2];
-        LOG_INF("Sending time: %d", sensors.debug[2]);
-        LOG_INF("Bundle Size: %d", puara_bundle.data_len);
+        // Read Button
+        readButton();
+        
+        // Read ADC
+        readAnalog();
 
-        // Update counter
-        sensors.debug[0]++;
+        // Read touch
+        readTouch();
 
-        // sleep a biy
+        // Get Data from IMU and magnetometer
+        updateMIMU();
+
+        // Counter
+		sensors.debug[0]++;
+
+		// Time Sensor read length
+        end = k_cycle_get_32();
+        sensors.debug[1] = k_cyc_to_us_ceil32(end-start);
+
+        // Send OSC
+        updateOSC();
+        
+        // Update LED
+        changeLED();
+
+        // Sleep thread for a bit
         k_yield();
     }
 
+    //     // Test serialisation speed
+    // int num_loops = 1000;
     // while(1) {
-    //     // Get data from fuelgauge
+    //     // Test serialise speed
     //     start = k_uptime_ticks();
-    //     if ((k_uptime_get_32() - battery.timer) > battery.interval) {
-    //         readBattery();
-    //         battery.timer = k_uptime_get_32();
-    //     } else {
-    //         events.battery = false;
+    //     for (int i = 0; i < num_loops; i++) {
+    //         puara_bundle.fast_serialise();
     //     }
-    //     // Read Button
-    //     readButton();
-        
-    //     // Read ADC
-    //     readAnalog();
-
-    //     // Read touch
-    //     readTouch();
-
-    //     // Get Data from IMU and magnetometer
-    //     updateMIMU();
-
-    //     // Counter
-	// 	sensors.debug[0]++;
-
-	// 	// Time Sensor read length
     //     end = k_uptime_ticks();
-    //     sensors.debug[1] = (end-start)*USEC_PER_TICK;
+    //     sensors.debug[1] = ((end - start) * USEC_PER_TICK) / num_loops;
+    //     LOG_INF("Serialising time: %d", sensors.debug[1]);
+    //     // Test updating speed
+    //     start = k_uptime_ticks();
+    //     for (int i = 0; i < num_loops; i++) {
+    //         updateOSC();
+    //     }
+    //     end = k_uptime_ticks();
+    //     sensors.debug[2] = ((end - start) * USEC_PER_TICK) / num_loops;
+    //     sensors.debug[2] = sensors.debug[2];
+    //     LOG_INF("Sending time: %d", sensors.debug[2]);
+    //     LOG_INF("Bundle Size: %d", puara_bundle.data_len);
 
-    //     // Send OSC
-    //     updateOSC();
-        
-    //     // Update LED
-    //     changeLED();
+    //     // Update counter
+    //     sensors.debug[0]++;
 
-    //     // Sleep thread for a bit
+    //     // sleep a biy
     //     k_yield();
     // }
 }
