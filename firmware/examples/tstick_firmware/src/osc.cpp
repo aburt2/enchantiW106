@@ -230,9 +230,13 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
         return NULL;
     }
 
-    s = lo_bundle_length(b);
-    if (size) {
-        *size = s;
+    if (data_len == 0) {
+        s = lo_bundle_length(b);
+        if (size) {
+            *size = s;
+        }
+    } else {
+        s = data_len;
     }
 
     if (!to) {
@@ -257,21 +261,21 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
     for (i = 0; i < b->len; i++) {
         switch (b->elmnts[i].type) {
             case LO_ELEMENT_MESSAGE:
-            lo_message_serialise_fast(i, b->elmnts[i].content.message.msg, b->elmnts[i].content.message.path, pos + 4, &skip);
-            break;
+                lo_message_serialise_fast(i, b->elmnts[i].content.message.msg, b->elmnts[i].content.message.path, pos + 4, &skip);
+                break;
             case LO_ELEMENT_BUNDLE:
-            lo_bundle_serialise_fast(b->elmnts[i].content.bundle, pos+4, &skip);
-            break;
-	}
+                lo_bundle_serialise_fast(b->elmnts[i].content.bundle, pos+4, &skip);
+                break;
+	    }
 
-	bes = (int32_t *) (void *)pos;
-	*bes = lo_htoo32(skip);
-	pos += skip + 4;
+        bes = (int32_t *) (void *)pos;
+        *bes = __builtin_bswap32(skip);
+        pos += skip + 4;
 
-	if (pos > (char*) to + s) {
-        LOG_ERR("liblo: data integrity error at message %lu", (long unsigned int)i);
-	    return NULL;
-	}
+        if (pos > (char*) to + s) {
+            LOG_ERR("liblo: data integrity error at message %lu", (long unsigned int)i);
+            return NULL;
+        }
     }
     if (pos != (char*) to + s) {
         LOG_ERR("liblo: data integrity error");
@@ -282,7 +286,7 @@ void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
 
 void *oscBundle::lo_message_serialise_fast(int msg_idx, lo_message m, const char *path, void *to, size_t * size)
 {
-    int i, argc;
+    int argc;
     char *ptr;
     size_t s = lo_message_length(m, path);
 

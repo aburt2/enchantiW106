@@ -818,7 +818,6 @@ int initDevices() {
     // if we got through all of that
     return 0;
 }
-
 /********* MAIN **********/
 int main(void)
 {
@@ -901,8 +900,6 @@ int main(void)
 
     // Tester
     int num_loops = 1000;
-    const char* path = "TStick_520/raw/capsense";
-    char test[24];
 
     // Test serialisation speed
     while(1) {
