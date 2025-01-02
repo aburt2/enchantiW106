@@ -8,7 +8,7 @@
 #include <lo/lo_lowlevel.h>
 
 #define MAX_BUNDLE_SIZE 2048
-
+#define MAX_NUM_MESSAGES 52
 class message_data {
     public:
         lo_type msg_type;
@@ -65,8 +65,8 @@ class message_data {
         }
 };
 
-// OSC helper
-void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size);
+// Helpers
+inline void fast_reorder(int num, void *data);
 
 // Bundle
 class oscBundle {
@@ -76,8 +76,11 @@ class oscBundle {
         char char_bundle[MAX_BUNDLE_SIZE];
         std::string str_bundle = "#bundle";
         int idx;
-        size_t data_len;
+        size_t data_len = 0;
         bool first_time = true;
+
+        // Store some information about messages
+        size_t msg_size[MAX_NUM_MESSAGES];
 
         // Properties
         int num_messages = 0;
@@ -102,10 +105,15 @@ class oscBundle {
         void add_array(const char *path, size_t size,  float *value);
         void add_msgs(size_t num_msg, message_data *msg_arr);
 
+        // Serialise Data
+        int serialise();
+        int fast_serialise();
+        int serialise_message(int idx, void *pos);
+        void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size);
+        void *lo_message_serialise_fast(int i, lo_message m, const char *path, void *to, size_t * size);
+
         // Send data
         void send(lo_address a, lo_server from);
-        int serialise();
-        int serialise_message(int idx, void *pos);
 };
 
 #endif

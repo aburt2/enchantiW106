@@ -892,7 +892,8 @@ int main(void)
 
 
     // Wait a bit
-    k_msleep(1000);
+    LOG_INF("Wait until I have an IP Address");
+    k_msleep(5000);
     LOG_INF("Starting Sending OSC messages");
     
     // Serialise the bundle once
@@ -900,13 +901,15 @@ int main(void)
 
     // Tester
     int num_loops = 1000;
+    const char* path = "TStick_520/raw/capsense";
+    char test[24];
 
     // Test serialisation speed
     while(1) {
         // Test serialise speed
         start = k_uptime_ticks();
         for (int i = 0; i < num_loops; i++) {
-            puara_bundle.serialise();
+            puara_bundle.fast_serialise();
         }
         end = k_uptime_ticks();
         sensors.debug[1] = ((end - start) * USEC_PER_TICK) / num_loops;
@@ -918,12 +921,15 @@ int main(void)
         }
         end = k_uptime_ticks();
         sensors.debug[2] = ((end - start) * USEC_PER_TICK) / num_loops;
-        sensors.debug[2] = sensors.debug[2] - sensors.debug[1];
+        sensors.debug[2] = sensors.debug[2];
         LOG_INF("Sending time: %d", sensors.debug[2]);
         LOG_INF("Bundle Size: %d", puara_bundle.data_len);
 
         // Update counter
         sensors.debug[0]++;
+
+        // sleep a biy
+        k_yield();
     }
 
     // while(1) {

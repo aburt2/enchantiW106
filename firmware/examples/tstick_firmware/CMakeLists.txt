@@ -11,6 +11,9 @@ set(EXTRA_CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/boards/overlay_hostap.conf)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(simple_osc)
 
+# Compile with hardware float
+zephyr_cc_option(-mfloat-abi=hard)
+
 # Set library path for dependents
 set(LIBDEPS_PATH "libdeps")
 

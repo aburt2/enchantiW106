@@ -110,6 +110,7 @@ void oscBundle::add(const char *path, lo_message msg) {
     if (ret < 0) {
         return;
     }
+    msg_size[num_messages] = lo_strsize(path) + lo_strsize(msg->types);
     num_messages++;
 }
 
@@ -178,7 +179,7 @@ void oscBundle::add_array(const char *path, size_t size,  float *value) {
 
 void oscBundle::send(lo_address a, lo_server from) {
     // Send data
-    if (serialise()) {
+    if (fast_serialise()) {
         // Send the bundle
         lo_send_serialised_bundle_from(a, from, char_bundle, data_len);
     }
@@ -188,7 +189,24 @@ int oscBundle::serialise() {
     if (data_len > MAX_BUNDLE_SIZE) {
         return 0;
     }
-    lo_bundle_serialise_fast(bundle, &char_bundle, &data_len);
+
+    if(!lo_bundle_serialise(bundle, &char_bundle, &data_len)) {
+        // return 0 uif null pointer was returned (indicates error)
+        return 0;
+    }
+    return 1; // if successful
+}
+
+int oscBundle::fast_serialise() {
+    if (data_len > MAX_BUNDLE_SIZE) {
+        return 0;
+    }
+    if (data_len == 0) first_time = true;
+    if (!lo_bundle_serialise_fast(bundle, &char_bundle, &data_len)) {
+        // returns 0 if null pointer was returned
+        return 0;
+    }
+    if (first_time) first_time = false; // skips certain memset functions not needed for multiple serialising runs
     return 1;
 }
 
@@ -198,9 +216,7 @@ int oscBundle::serialise_message(int idx, void *pos) {
     return 1;
 }
 
-
-
-void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
+void *oscBundle::lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
 {
     size_t s, skip;
     int32_t *bes;
@@ -221,28 +237,31 @@ void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
 
     if (!to) {
         to = calloc(1, s);
-        LOG_INF("Allocated %d bytes to bundle: ", s);
     }
-
+    
     pos = (char*) to;
-    strcpy(pos, "#bundle");
-    pos += 8;
+    if (first_time) {
+        strcpy(pos, "#bundle");
+        pos += 8;
 
-    be.nl = lo_htoo32(b->ts.sec);
-    memcpy(pos, &be, 4);
-    pos += 4;
-    be.nl = lo_htoo32(b->ts.frac);
-    memcpy(pos, &be, 4);
-    pos += 4;
+        be.nl = lo_htoo32(b->ts.sec);
+        memcpy(pos, &be, 4);
+        pos += 4;
+        be.nl = lo_htoo32(b->ts.frac);
+        memcpy(pos, &be, 4);
+        pos += 4;
+    } else {
+        pos += 16;
+    }
     
     for (i = 0; i < b->len; i++) {
-	switch (b->elmnts[i].type) {
-	    case LO_ELEMENT_MESSAGE:
-		lo_message_serialise(b->elmnts[i].content.message.msg, b->elmnts[i].content.message.path, pos + 4, &skip);
-		break;
-	    case LO_ELEMENT_BUNDLE:
-		lo_bundle_serialise(b->elmnts[i].content.bundle, pos+4, &skip);
-		break;
+        switch (b->elmnts[i].type) {
+            case LO_ELEMENT_MESSAGE:
+            lo_message_serialise_fast(i, b->elmnts[i].content.message.msg, b->elmnts[i].content.message.path, pos + 4, &skip);
+            break;
+            case LO_ELEMENT_BUNDLE:
+            lo_bundle_serialise_fast(b->elmnts[i].content.bundle, pos+4, &skip);
+            break;
 	}
 
 	bes = (int32_t *) (void *)pos;
@@ -250,19 +269,50 @@ void *lo_bundle_serialise_fast(lo_bundle b, void *to, size_t * size)
 	pos += skip + 4;
 
 	if (pos > (char*) to + s) {
-            fprintf(stderr, "liblo: data integrity error at message %lu\n",
-                    (long unsigned int)i);
-
+        LOG_ERR("liblo: data integrity error at message %lu", (long unsigned int)i);
 	    return NULL;
 	}
     }
     if (pos != (char*) to + s) {
-        fprintf(stderr, "liblo: data integrity error\n");
-        if (to) {
-            free(to);
-        }
+        LOG_ERR("liblo: data integrity error");
         return NULL;
     }
-
     return to;
+}
+
+void *oscBundle::lo_message_serialise_fast(int msg_len, lo_message m, const char *path, void *to, size_t * size)
+{
+    int i, argc;
+    char *ptr;
+    size_t s = lo_message_length(m, path);
+
+    if (size) {
+        *size = s;
+    }
+
+    if (!to) {
+        to = calloc(1, s);
+    }
+
+    if (first_time) {
+        // Only do this once, we don't have to reformat this for future calls
+        memset((char*) to + lo_strsize(path) - 4, 0, 4);   // ensure zero-padding
+        strcpy((char*) to, path);
+        memset((char*) to + lo_strsize(path) + lo_strsize(m->types) - 4, 0,
+            4);
+        strcpy((char*) to + lo_strsize(path), m->types);
+    }
+    ptr = (char*) to + msg_len;
+    memcpy(ptr, m->data, m->datalen);
+
+    argc = (int) m->typelen - 1;
+    fast_reorder(argc, ptr);
+    return to;
+}
+
+inline void fast_reorder(int num, void *data) {
+    for (int i = 0; i < num; ++i) {
+        *(int32_t *) data = __REV(*(int32_t *) data);
+        data += 4;
+    }
 }
