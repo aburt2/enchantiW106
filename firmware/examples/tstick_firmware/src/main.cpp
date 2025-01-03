@@ -301,7 +301,8 @@ struct Sensors {
     float touchBottom;      
     int mergedtouch[TSTICK_SIZE];
     int mergeddiscretetouch[TSTICK_SIZE];
-    int debug[3];
+    int counter;
+    int looptime;
 } sensors;
 
 
@@ -334,7 +335,8 @@ struct uLiblo {
     int touchBottom;      
     int mergedtouch;
     int mergeddiscretetouch;
-    int debug;
+    int counter;
+    int looptime;
 } ulo;
 
 
@@ -391,14 +393,11 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
-    start = k_cycle_get_32();
     updateOSC_bundle();
     
     if (wifi_enabled && !ap_enabled) {
         puara_bundle.fast_send(osc1, osc_server);
     }
-    end = k_cycle_get_32();
-    sensors.debug[2] = k_cyc_to_us_ceil32(end - start);
 }
 
 void initOSC_bundle() {
@@ -441,7 +440,8 @@ void initOSC_bundle() {
     puara_bundle.add(&ulo.voltage, "battery/voltage", sensors.voltage);  
 
     // Add counter
-    puara_bundle.add(&ulo.debug, "debug", 3, sensors.debug);
+    puara_bundle.add(&ulo.counter, "test/counter", sensors.counter);
+    puara_bundle.add(&ulo.looptime, "test/looptime", sensors.looptime);
 }
 
 void updateOSC_bundle() {
@@ -484,7 +484,8 @@ void updateOSC_bundle() {
     puara_bundle.update_message(ulo.voltage, sensors.voltage);
 
     // Add counter
-    puara_bundle.update_message(ulo.debug, 3, sensors.debug);
+    puara_bundle.update_message(ulo.counter, sensors.counter);
+    puara_bundle.update_message(ulo.looptime, sensors.looptime);
 }
 
 // /* The devicetree node identifier for the "led0" alias. */
@@ -921,11 +922,6 @@ int main(void)
     osc_server = lo_server_new("8000", error);
     lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
 
-    // Initialise debug array
-    sensors.debug[0] = 0;
-    sensors.debug[1] = 0;
-    sensors.debug[2] = 0;
-
     // Initialise base namespace
     baseNamespace.append("TStick_520");
     oscNamespace = baseNamespace;
@@ -968,11 +964,11 @@ int main(void)
         updateMIMU();
 
         // Counter
-		sensors.debug[0]++;
+		sensors.counter++;
 
 		// Time Sensor read length
         end = k_cycle_get_32();
-        sensors.debug[1] = k_cyc_to_us_ceil32(end-start);
+        sensors.looptime = k_cyc_to_us_ceil32(end-start);
 
         // Send OSC
         updateOSC();
