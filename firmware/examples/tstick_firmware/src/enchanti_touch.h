@@ -43,7 +43,7 @@ class EnchantiTouch: public Touch<enchanti_touch_config>
         // Board Properties
         int comMode = SPI_MODE;
         int boardMode = RAW;
-        int newData = 0;
+        bool newData = false;
         float num_boards = 1; // number of touch boards, set half numbers to indicate if using only the first touch circuit
         uint8_t main_i2c_addr = 0x1E;
         uint8_t aux_i2c_addr = 0x1F;
@@ -56,7 +56,6 @@ class EnchantiTouch: public Touch<enchanti_touch_config>
         int touchStatus = 0;
 
         // Touch arrays
-        uint8_t buf[240];
         uint16_t data[120];
         int touch[120];
         int normTouch[120];
@@ -76,6 +75,7 @@ class EnchantiTouch: public Touch<enchanti_touch_config>
 		uint8_t initTouch(touch_config enchanti_config);
         void readTouch();
         void cookData();
+        bool ready();
 
     private:
         void readI2CBuffer(uint8_t i2c_addr, uint8_t reg, uint8_t length, int offset = 0);

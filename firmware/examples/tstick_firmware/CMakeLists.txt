@@ -14,6 +14,9 @@ set(EXTRA_CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/boards/overlay_hostap.conf)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(simple_osc)
 
+# Add the dma driver for nxp i2c
+zephyr_library_sources(${ZEPHYR_HAL_NXP_MODULE_DIR}/mcux/mcux-sdk/drivers/flexcomm/i2c/fsl_i2c_dma.c)
+
 # Compile with hardware float
 zephyr_cc_option(-mfloat-abi=hard)
 
