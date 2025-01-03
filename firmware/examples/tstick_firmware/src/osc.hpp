@@ -9,61 +9,6 @@
 
 #define MAX_BUNDLE_SIZE 2048
 #define MAX_NUM_MESSAGES 52
-class message_data {
-    public:
-        lo_type msg_type;
-        size_t num_elements;
-        void * data;   
-        char* path;
-
-        // Constructors
-        message_data(const char *msg_path, float *arr, size_t num) : msg_type(LO_FLOAT), num_elements(num), data(NULL), path(NULL) {
-            // Copy data to buffer
-            data = malloc(sizeof(float)*num);
-            memcpy((char *)data, arr, sizeof(sizeof(float)*num));
-
-            // Copy message path
-            strcpy(path, msg_path);
-        }
-        message_data(const char *msg_path, int *arr, size_t num) : msg_type(LO_INT32), num_elements(num), data(NULL), path(NULL) {
-            // Copy data to buffer
-            data = malloc(sizeof(int)*num);
-            memcpy((char *)data, arr, sizeof(sizeof(int)*num));
-
-            // Copy message path
-            strcpy(path, msg_path);
-        }
-        message_data(const char *msg_path, float arr) : msg_type(LO_FLOAT), num_elements(0), data(NULL), path(NULL) {
-            // Copy data to buffer
-            data = malloc(sizeof(float));
-            memcpy((char *)data, &arr, sizeof(sizeof(float)));
-
-            // Copy message path
-            strcpy(path, msg_path);
-        }
-        message_data(const char *msg_path, int arr) : msg_type(LO_INT32), num_elements(0), data(NULL), path(NULL) {
-            // Copy data to buffer
-            data = malloc(sizeof(int));
-            memcpy((char *)data, &arr, sizeof(sizeof(int)));
-
-            // Copy message path
-            strcpy(path, msg_path);
-        }
-
-        // updata data operators
-        void update_data(float *val, size_t data_len) {
-            memcpy((char *)data, val, sizeof(sizeof(float)*data_len));
-        }
-        void update_data(int *val, size_t data_len) {
-            memcpy((char *)data, val, sizeof(sizeof(int)*data_len));
-        }
-        void update_data(float val) {
-            memcpy((char *)data, &val, sizeof(sizeof(float)));
-        }
-        void update_data(int val) {
-            memcpy((char *)data, &val, sizeof(sizeof(int)));
-        }
-};
 
 // Helpers
 inline void fast_reorder(int num, void *data);
@@ -94,17 +39,13 @@ class oscBundle {
         int update_message(int i, size_t size, int *data);
         int update_message(int i, int data);
         int update_message(int i, float data);
-        void update_message(int i, message_data msg_data);
-        void update(size_t num_msg, message_data *msg_arr);
 
         // Add data
-        void add(const char *path, int value);
-        void add(const char *path, float value);
-        void add(const char *path, message_data msg_data);
-        void add(const char *path, lo_message msg);
-        void add_array(const char *path, size_t size, int *value);
-        void add_array(const char *path, size_t size,  float *value);
-        void add_msgs(size_t num_msg, message_data *msg_arr);
+        void add(int *idx,const char *path, int value);
+        void add(int *idx,const char *path, float value);
+        void add(int *idx,const char *path, size_t size, int *value);
+        void add(int *idx,const char *path, size_t size,  float *value);
+        void add(int *idx,const char *path, lo_message msg);
 
         // Serialise Data
         int serialise();
