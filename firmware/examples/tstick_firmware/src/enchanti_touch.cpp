@@ -8,56 +8,13 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
-#include <zephyr/drivers/clock_control.h>
-#include <zephyr/drivers/pinctrl.h>
-#include <zephyr/drivers/reset.h>
+
 #define I2C_MASTER DT_ALIAS(i2c3)
 
-// Use HAL NXP drivers
-#include "fsl_i2c.h"
-#include "fsl_i2c_dma.h"
-
-// Zephyr setup
 // I2C master functionality
 static const struct device *const com_dev = DEVICE_DT_GET(I2C_MASTER);
+static struct k_poll_signal i2c_done_sig = K_POLL_SIGNAL_INITIALIZER(i2c_done_sig);
 
-// Get DMA 
-
-// Define MCUS flexcomm config so I can get I2c base
-struct mcux_flexcomm_config {
-	I2C_Type *base;
-	const struct device *clock_dev;
-	clock_control_subsys_t clock_subsys;
-	void (*irq_config_func)(const struct device *dev);
-	uint32_t bitrate;
-	const struct pinctrl_dev_config *pincfg;
-	const struct reset_dt_spec reset;
-};
-
-// DMA settings
-/*******************************************************************************
- * Definitions needed for HAL I2C
- ******************************************************************************/
-#define HAL_I2C_MASTER              I2C2
-#define DMA_CHANNEL                DMA0
-#define HAL_I2C_MASTER_CHANNEL         5
-#define I2C_BAUDRATE               (1000000) /* 1Mhz */
-#define I2C_DATA_LENGTH            (240)     /* MAX is 256 */
-
-i2c_master_dma_handle_t g_m_dma_handle;
-static dma_handle_t dmaHandle;
-volatile bool g_MasterCompletionFlag = false;
-
-// i2c Buffers
-uint8_t g_master_txBuff[I2C_DATA_LENGTH];
-uint8_t g_master_rxBuff[I2C_DATA_LENGTH];
-
-// callback
-static void i2c_master_dma_callback(I2C_Type *base, i2c_master_dma_handle_t *handle, status_t status, void *userData);
-
-/*******************************************************************************
- * Class methods
- ******************************************************************************/
 // Initialise touch board, 
 uint8_t EnchantiTouch::initTouch(touch_config enchanti_config) {
     float num = enchanti_config.touchsize / ENCHANTI_BASETOUCHSIZE;
@@ -80,27 +37,46 @@ uint8_t EnchantiTouch::initTouch(touch_config enchanti_config) {
     boardMode = enchanti_config.touch_mode;
     comMode = enchanti_config.comm_mode;
 
-    // Setup I2C device
-    if(!device_is_ready(com_dev)) {
-        return 0;
+    // Setup SPI if spi mode selected
+    if (comMode == COMMS::SPI_MODE) {
+        // // to use DMA buffer, use these methods to allocate buffer
+        // spi_master_tx_buf = master.allocDMABuffer(ENCHANTI_BUFFERSIZE);
+        // spi_master_rx_buf = master.allocDMABuffer(ENCHANTI_BUFFERSIZE);
+
+        // // set the DMA buffer
+        // for (uint32_t i = 0; i < ENCHANTI_BUFFERSIZE; i++) {
+        //     spi_master_tx_buf[i] = i & 0xFF;
+        // }
+        // memset(spi_master_rx_buf, 0, ENCHANTI_BUFFERSIZE);
+
+        // // intialising the spi bus 
+        // master.setDataMode(SPI_MODE0);    
+        // master.setFrequency(spiClk);            
+        // master.setMaxTransferSize(ENCHANTI_BUFFERSIZE);  
+        // master.setDutyCyclePos(96);
+        // // Start bus
+        // master.begin();
+    } else {
+        if(!device_is_ready(com_dev)) {
+            return 0;
+        }
     }
 
-    // Initialise DMA Channel
-    DMA_Init(DMA_CHANNEL);
 
-    /* Initialise tx and rx buffer */
-    memset(g_master_txBuff, 0 , I2C_DATA_LENGTH);
-    memset(g_master_rxBuff, 0 , I2C_DATA_LENGTH);
+    // // Send configuration data to touch board
+    // // Send number of boards
+    // Wire.beginTransmission(main_i2c_addr);
+    // Wire.write(NUMBOARD_REG);
+    // Wire.write(int(num_boards));
+    // uint8_t last_status = Wire.endTransmission();
 
-    /* Initialise DMA handle and transfer config*/
-    memset(&g_m_dma_handle, 0, sizeof(g_m_dma_handle));
-
-    /* Initialise DMA Handle and buffer */
-    DMA_EnableChannel(DMA_CHANNEL, HAL_I2C_MASTER_CHANNEL);
-    DMA_CreateHandle(&dmaHandle, DMA_CHANNEL, HAL_I2C_MASTER_CHANNEL);
-    I2C_MasterTransferCreateHandleDMA(HAL_I2C_MASTER, &g_m_dma_handle, i2c_master_dma_callback, NULL, &dmaHandle);
-
-
+    // // Set up touch mode
+    // Wire.beginTransmission(main_i2c_addr);
+    // Wire.write(TOUCHMODE_REG);
+    // Wire.write(mode);
+    // last_status = Wire.endTransmission();    
+    // enable sensor
+    // TODO: send an I2C command back to sensor to start its initialisation process
     running = true;
     return 1;
 }
@@ -120,11 +96,14 @@ void EnchantiTouch::readTouch(){
         // Read touch data from I2C buffer
         readI2CBuffer(main_i2c_addr, baseReg, length);
 
-        // // Read auxillary touch board data
-        // if (num_boards > 1) {
-        //     length = (touchSize - ENCHANTI_BASETOUCHSIZE) * 2;
-        //     readI2CBuffer(aux_i2c_addr, baseReg, length, ENCHANTI_BASETOUCHSIZE); // offset data index to not overwrite main touch board data
-        // }
+        // Read auxillary touch board data
+        if (num_boards > 1) {
+            length = (touchSize - ENCHANTI_BASETOUCHSIZE) * 2;
+            readI2CBuffer(aux_i2c_addr, baseReg, length, ENCHANTI_BASETOUCHSIZE); // offset data index to not overwrite main touch board data
+        }
+    }
+    if (comMode == COMMS::SPI_MODE) {
+        readSPIBuffer(ENCHANTI_BUFFERSIZE, 2);
     }
 }
 
@@ -163,40 +142,50 @@ void EnchantiTouch::cookData() {
 
 void EnchantiTouch::readI2CBuffer(uint8_t i2c_addr, uint8_t reg, uint8_t length, int offset)
 {
-    // If previous transfer complete read available data
-    if (g_MasterCompletionFlag) {
-        memcpy(data, g_master_rxBuff, sizeof(uint8_t)*length);
-        g_MasterCompletionFlag = false;
-        newData = true;
-    }
+    // Read multiple bytes
+    i2c_burst_read(com_dev, i2c_addr, reg, buf, length);
 
-    // Update transfer settings
-    i2c_master_transfer_t masterXfer;
-    masterXfer.slaveAddress   = i2c_addr;
-    masterXfer.direction      = kI2C_Read;
-    masterXfer.subaddress     = (uint32_t)reg;
-    masterXfer.subaddressSize = 1;
-    masterXfer.data           = g_master_rxBuff;
-    masterXfer.dataSize       = length;
-    masterXfer.flags          = kI2C_TransferDefaultFlag;
-
-    // Start new transfer
-    I2C_MasterTransferDMA(HAL_I2C_MASTER, &g_m_dma_handle, &masterXfer);
+    // Read the available data
+    memcpy(data, buf, sizeof(uint8_t)*length);
+    // uint8_t loc = 0;
+    // uint16_t value = 0;  
+    // int i = 0;
+    // while (i < (length-1)) {
+    //     // Read two bytes for each sensor
+    //     uint8_t lsb  = buf[i];
+    //     uint8_t msb  = buf[i+1];
+    //     value = (msb << 8) | lsb;
+    //     if (data[loc + offset] != value) {
+    //         newData = 1;
+    //         data[loc + offset] = value;
+    //     }
+    //     ++loc;
+    //     i += 2;
+    // }
 }
 
-bool EnchantiTouch::ready() {
-    bool ret = newData;
-    newData = false;
-    return ret;
-}
-
-// I2C transfer functions for non blocking I2C call
-static void i2c_master_dma_callback(I2C_Type *base, i2c_master_dma_handle_t *handle, status_t status, void *userData)
+void EnchantiTouch::readSPIBuffer(uint16_t length, int offset)
 {
-    /* Signal transfer success when received success status. */
-    if (status == kStatus_Success)
-    {
-        g_MasterCompletionFlag = true;
-    }
-}
+    // // prepare for data read
+    // uint8_t loc = 0;
+    // uint16_t value = 0;  
 
+    // // Start transaction
+    // memset(spi_master_rx_buf, 0, ENCHANTI_BUFFERSIZE);
+    // const size_t received_bytes = master.transfer(NULL, spi_master_rx_buf, length);
+
+    // // Process data
+    // while (loc < (touchSize*2)) {
+    //     uint8_t lsb  = spi_master_rx_buf[loc+offset];
+    //     ++loc;
+    //     uint8_t msb  = spi_master_rx_buf[loc+offset];
+    //     ++loc;
+    //     value = uint16_t(msb << 8) | uint16_t(lsb);
+    //     if (value < 4097) { // spi occassionally throws junk ignore it
+    //         if (data[int(loc/2)] != value) {
+    //             newData = 1;
+    //         }
+    //         data[int(loc/2)] = value;
+    //     }
+    // }
+}

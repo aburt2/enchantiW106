@@ -14,15 +14,13 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/adc.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_uart.h>
 #include <errno.h>
-
-// Drivers
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/adc.h>
-#include <zephyr/drivers/sensor.h>
 
 // Power management
 #include <zephyr/pm/pm.h>
@@ -305,39 +303,6 @@ struct Sensors {
 } sensors;
 
 
-struct uLiblo {
-    int accl;
-    int gyro;
-    int magn;
-    int mimu;
-    int quat;
-    int ypr;
-    int shake;
-    int jab;
-    int brush;
-    int rub;
-    int multibrush;
-    int multirub;
-    int count;
-    int tap;
-    int dtap;
-    int ttap;
-    int fsr;
-    int squeeze;
-    int battery;
-    int current;
-    int voltage;
-    int tte;
-    int touchAll;         
-    int touchTop;         
-    int touchMiddle;      
-    int touchBottom;      
-    int mergedtouch;
-    int mergeddiscretetouch;
-    int debug;
-} ulo;
-
-
 
 struct Events {
     bool battery;
@@ -403,88 +368,86 @@ void updateOSC() {
 
 void initOSC_bundle() {
     // Continuously send FSR data
-    puara_bundle.add(&ulo.fsr, "raw/fsr", 2, sensors.fsr);
-    puara_bundle.add(&ulo.squeeze, "instrument/squeeze", 2, sensors.squeeze);
+    puara_bundle.add_array("raw/fsr", 2, sensors.fsr);
+    puara_bundle.add_array("instrument/squeeze", 2, sensors.squeeze);
 
     //Send touch data
-    puara_bundle.add(&ulo.touchAll, "instrument/touch/all", sensors.touchAll);
-    puara_bundle.add(&ulo.touchTop, "instrument/touch/top", sensors.touchTop);
-    puara_bundle.add(&ulo.touchMiddle, "instrument/touch/middle", sensors.touchMiddle);
-    puara_bundle.add(&ulo.touchBottom, "instrument/touch/bottom", sensors.touchBottom);
-    puara_bundle.add(&ulo.mergedtouch, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
+    puara_bundle.add("instrument/touch/all", sensors.touchAll);
+    puara_bundle.add("instrument/touch/top", sensors.touchTop);
+    puara_bundle.add("instrument/touch/middle", sensors.touchMiddle);
+    puara_bundle.add("instrument/touch/bottom", sensors.touchBottom);
+    puara_bundle.add_array("raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
     // Touch gestures
-    puara_bundle.add(&ulo.brush, "instrument/brush", sensors.brush);
-    puara_bundle.add(&ulo.multibrush, "instrument/multibrush", 4, sensors.multibrush);
-    puara_bundle.add(&ulo.rub, "instrument/rub", sensors.rub);
-    puara_bundle.add(&ulo.multirub, "instrument/multirub", 4, sensors.multirub);
+    puara_bundle.add("instrument/brush", sensors.brush);
+    puara_bundle.add_array("instrument/multibrush", 4, sensors.multibrush);
+    puara_bundle.add("instrument/rub", sensors.rub);
+    puara_bundle.add_array("instrument/multirub", 4, sensors.multirub);
     
     // MIMU data
-    puara_bundle.add(&ulo.accl, "raw/accl", 3, sensors.accl);
-    puara_bundle.add(&ulo.gyro, "raw/gyro", 3, sensors.gyro);
-    puara_bundle.add(&ulo.magn, "raw/magn", 3, sensors.magn);
-    puara_bundle.add(&ulo.ypr, "ypr", 3, sensors.ypr); 
-    puara_bundle.add(&ulo.quat,"orientation", 4, sensors.quat); 
+    puara_bundle.add_array("raw/accl", 3, sensors.accl);
+    puara_bundle.add_array("raw/gyro", 3, sensors.gyro);
+    puara_bundle.add_array("raw/magn", 3, sensors.magn);
+    puara_bundle.add_array("ypr", 3, sensors.ypr); 
 
     // Inertial gestures
-    puara_bundle.add(&ulo.shake, "instrument/shakexyz", 3, sensors.shake);
-    puara_bundle.add(&ulo.jab, "instrument/jabxyz", 3, sensors.jab);
+    puara_bundle.add_array("instrument/shakexyz", 3, sensors.shake);
+    puara_bundle.add_array("instrument/jabxyz", 3, sensors.jab);
     // Button Gestures
-    puara_bundle.add(&ulo.count, "instrument/button/count", sensors.count);
-    puara_bundle.add(&ulo.tap, "instrument/button/tap", sensors.tap);
-    puara_bundle.add(&ulo.dtap, "instrument/button/dtap", sensors.dtap);
-    puara_bundle.add(&ulo.ttap, "instrument/button/ttap", sensors.ttap);
+    puara_bundle.add("instrument/button/count", sensors.count);
+    puara_bundle.add("instrument/button/tap", sensors.tap);
+    puara_bundle.add("instrument/button/dtap", sensors.dtap);
+    puara_bundle.add("instrument/button/ttap", sensors.ttap);
 
     // Battery Data
-    puara_bundle.add(&ulo.battery, "battery/percentage", sensors.battery);
-    puara_bundle.add(&ulo.current, "battery/current", sensors.current);
-    puara_bundle.add(&ulo.tte, "battery/timetoempty", sensors.tte);
-    puara_bundle.add(&ulo.voltage, "battery/voltage", sensors.voltage);  
+    puara_bundle.add("battery/percentage", sensors.battery);
+    puara_bundle.add("battery/current", sensors.current);
+    puara_bundle.add("battery/timetoempty", sensors.tte);
+    puara_bundle.add("battery/voltage", sensors.voltage);  
 
     // Add counter
-    puara_bundle.add(&ulo.debug, "debug", 3, sensors.debug);
+    puara_bundle.add_array("debug", 3, sensors.debug);
 }
 
 void updateOSC_bundle() {
     // Continuously send FSR data
-    puara_bundle.update_message(ulo.fsr, 2, sensors.fsr);
-    puara_bundle.update_message(ulo.squeeze, 2, sensors.squeeze);
+    puara_bundle.update_message(0, 2, sensors.fsr);
+    puara_bundle.update_message(1, 2, sensors.squeeze);
 
     //Send touch data
-    puara_bundle.update_message(ulo.touchAll, sensors.touchAll);
-    puara_bundle.update_message(ulo.touchTop, sensors.touchTop);
-    puara_bundle.update_message(ulo.touchMiddle, sensors.touchMiddle);
-    puara_bundle.update_message(ulo.touchBottom, sensors.touchBottom);
-    puara_bundle.update_message(ulo.mergedtouch, TSTICK_SIZE, sensors.mergedtouch);
+    puara_bundle.update_message(2, sensors.touchAll);
+    puara_bundle.update_message(3, sensors.touchTop);
+    puara_bundle.update_message(4, sensors.touchMiddle);
+    puara_bundle.update_message(5, sensors.touchBottom);
+    puara_bundle.update_message(6, TSTICK_SIZE, sensors.mergedtouch);
     // Touch gestures
-    puara_bundle.update_message(ulo.brush, sensors.brush);
-    puara_bundle.update_message(ulo.multibrush, 4, sensors.multibrush);
-    puara_bundle.update_message(ulo.rub, sensors.rub);
-    puara_bundle.update_message(ulo.multirub, 4, sensors.multirub);
+    puara_bundle.update_message(7, sensors.brush);
+    puara_bundle.update_message(8, 4, sensors.multibrush);
+    puara_bundle.update_message(9, sensors.rub);
+    puara_bundle.update_message(10, 4, sensors.multirub);
     
     // MIMU data
-    puara_bundle.update_message(ulo.accl, 3, sensors.accl);
-    puara_bundle.update_message(ulo.gyro, 3, sensors.gyro);
-    puara_bundle.update_message(ulo.magn, 3, sensors.magn);
-    puara_bundle.update_message(ulo.ypr, 3, sensors.ypr); 
-    puara_bundle.update_message(ulo.quat, 4, sensors.quat); 
+    puara_bundle.update_message(11, 3, sensors.accl);
+    puara_bundle.update_message(12, 3, sensors.gyro);
+    puara_bundle.update_message(13, 3, sensors.magn);
+    puara_bundle.update_message(14, 3, sensors.ypr); 
 
     // Inertial gestures
-    puara_bundle.update_message(ulo.shake, 3, sensors.shake);
-    puara_bundle.update_message(ulo.jab, 3, sensors.jab);
+    puara_bundle.update_message(15, 3, sensors.shake);
+    puara_bundle.update_message(16, 3, sensors.jab);
     // Button Gestures
-    puara_bundle.update_message(ulo.count, sensors.count);
-    puara_bundle.update_message(ulo.tap, sensors.tap);
-    puara_bundle.update_message(ulo.dtap, sensors.dtap);
-    puara_bundle.update_message(ulo.ttap, sensors.ttap);
+    puara_bundle.update_message(17, sensors.count);
+    puara_bundle.update_message(18, sensors.tap);
+    puara_bundle.update_message(19, sensors.dtap);
+    puara_bundle.update_message(20, sensors.ttap);
 
     // Battery Data
-    puara_bundle.update_message(ulo.battery, sensors.battery);
-    puara_bundle.update_message(ulo.current, sensors.current);
-    puara_bundle.update_message(ulo.tte, sensors.tte);
-    puara_bundle.update_message(ulo.voltage, sensors.voltage);
+    puara_bundle.update_message(21, sensors.battery);
+    puara_bundle.update_message(22, sensors.current);
+    puara_bundle.update_message(23, sensors.tte);
+    puara_bundle.update_message(24, sensors.voltage);
 
     // Add counter
-    puara_bundle.update_message(ulo.debug, 3, sensors.debug);
+    puara_bundle.update_message(25, 3, sensors.debug);
 }
 
 // /* The devicetree node identifier for the "led0" alias. */
@@ -630,9 +593,7 @@ void readAnalog() {
 void readTouch() {
     // Read touch data
     touch.readTouch();
-    if (touch.ready()) {
-        touch.cookData();
-    }
+    touch.cookData();
 
     // Store in arrays for sensing
     memcpy(sensors.mergedtouch, touch.touch, sizeof(int) * TSTICK_SIZE);
@@ -705,19 +666,12 @@ void updateMIMU() {
         // Update sensor fusion
         orientation.update();
 
-        // Save orientation
         sensors.ypr[0] = orientation.euler.azimuth * RAD_TO_DEGREES;
         sensors.ypr[1] = orientation.euler.pitch * RAD_TO_DEGREES;
         sensors.ypr[2] = orientation.euler.roll * RAD_TO_DEGREES;
 
         // normalise roll and heading to 0 - 360
         sensors.ypr[2] = normDegree(sensors.ypr[2]);
-
-        // Save quaternions
-        sensors.quat[0] = orientation.quaternion.w;
-        sensors.quat[1] = orientation.quaternion.x; 
-        sensors.quat[2] = orientation.quaternion.y;
-        sensors.quat[3] = orientation.quaternion.z;
 
         // Clean up float precision (round to 1 decimal place)
         for (int i = 0; i < 3; i++) {
@@ -965,7 +919,7 @@ int main(void)
         // Read touch
         // TODO: use non blocking i2c call
         readTouch();
-        
+
         // Get Data from IMU and magnetometer
         updateMIMU();
 
