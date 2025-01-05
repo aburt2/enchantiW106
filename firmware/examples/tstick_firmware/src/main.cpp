@@ -269,7 +269,7 @@ int start = 0;
 int end = 0;
 #define TSTICK_SIZE 60
 
-std::string baseNamespace = "/";
+std::string baseNamespace = "";
 std::string oscNamespace;
 
 struct Sensors {
