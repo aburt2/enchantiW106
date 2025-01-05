@@ -239,18 +239,25 @@ lo_address osc1;
 lo_address osc2;
 oscBundle puara_bundle;
 lo_server osc_server;
+lo_timetag lo_tt;
+int secs_idx;
+int bundle_size = 0;
+int size_idx;
 int counter = 0;
+int counter_idx;
 int looptime = 0;
+int looptime_idx;
 int last_time = 0;
 int last_log_time = 0;
 bool wifi_on = false;
 int start = 0;
 int end = 0;
-#define TEST_SIZE 512
+#define TEST_SIZE 256
 int test_array[TEST_SIZE];
+int test_idx;
 
 // OSC Namespace
-std::string baseNamespace = "/";
+std::string baseNamespace = "";
 std::string oscNamespace;
 
 // OSC Helpers
@@ -281,26 +288,27 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
-    start = k_uptime_ticks();
     updateOSC_bundle();
-    end = k_uptime_ticks();
-    looptime = (end-start)*USEC_PER_TICK;
-
+    
     if (wifi_enabled && !ap_enabled) {
-        lo_send_bundle_from(osc1, osc_server, puara_bundle.bundle);
+        puara_bundle.fast_send(osc1, osc_server);
     }
 }
 
 void initOSC_bundle() {
-    puara_bundle.add("counter",  counter);
-    puara_bundle.add("looptime", looptime);
-    puara_bundle.add_array("test_array", TEST_SIZE, test_array);
+    puara_bundle.add(&counter_idx, "test/counter",  counter);
+    puara_bundle.add(&looptime_idx, "test/looptime", looptime);
+    puara_bundle.add(&size_idx, "test/bundlelength", bundle_size);
+    puara_bundle.add(&secs_idx, "test/secs", lo_tt);
+    puara_bundle.add(&test_idx, "test_array", TEST_SIZE, test_array);
 }
 
 void updateOSC_bundle() {
-    puara_bundle.update_message(0,  counter);
-    puara_bundle.update_message(1, looptime);
-    puara_bundle.update_message(2, TEST_SIZE, test_array);
+    puara_bundle.update_message(counter_idx,  counter);
+    puara_bundle.update_message(looptime_idx, looptime);
+    puara_bundle.update_message(size_idx, bundle_size);
+    puara_bundle.update_message(secs_idx, lo_tt);
+    puara_bundle.update_message(test_idx, TEST_SIZE, test_array);
 }
 
 /*
@@ -308,76 +316,6 @@ void updateOSC_bundle() {
  * See the sample documentation for information on how to fix this.
  */
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
-
-/* Main loop */
-static void osc_loop(void *, void *, void *);
-
-static void osc_loop(void *, void *, void *) {
-    int ret;
-    bool led_state = true;
-    
-    if (!gpio_is_ready_dt(&led)) {
-        LOG_INF("FAILED LED SETUP\n");
-        return;
-    }
-
-    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
-    if (ret < 0) {
-        LOG_INF("FAILED LED CONFIGURATION\n");
-        return;
-    }
-    LOG_INF("Configured LED");
-
-    LOG_INF("Initialising OSC-IP1  ... ");
-    osc1 = lo_address_new("192.168.86.230", "8000");
-    LOG_INF("Configured OSC  ...");
-
-    // Create a server
-    osc_server = lo_server_new("8000", error);
-    lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
-
-    // Initialise base namespace
-    baseNamespace.append("TStick_520");
-    puara_bundle.init(baseNamespace.c_str());
-    initOSC_bundle();
-
-    // Wait a bit
-    k_msleep(500);
-    LOG_INF("Starting Sending OSC messages");
-
-    while(1) {
-        // Counter
-		counter++;
-
-		// Only send if network was properly configured
-        start = k_uptime_ticks();
-        updateOSC();
-        end = k_uptime_ticks();
-        looptime = (end-start)*USEC_PER_TICK;
-
-        if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
-            ret = gpio_pin_toggle_dt(&led);
-            led_state = !led_state;
-            last_time = k_uptime_get_32();
-        }
-
-        // if ((k_uptime_get_32() - last_log_time) > LOG_RATE_MS) {
-        //     k_thread_runtime_stats_t rt_stats_thread;
-        //     k_thread_runtime_stats_get(k_current_get(), &rt_stats_thread);
-        //     LOG_INF("Cycles: %llu\n", rt_stats_thread.execution_cycles);
-        //     last_log_time = k_uptime_get_32();
-        // }
-
-        // Sleep thread for a bit
-        k_yield();
-    }
-}
-
-// Create main thread
-#define OSC_STACK_SIZE 8192
-#define OSC_PRIORITY 5
-K_THREAD_STACK_DEFINE(osc_stack_area, OSC_STACK_SIZE);
-struct k_thread osc_thread_data;
 
 /********* MAIN **********/
 int main(void)
@@ -418,13 +356,70 @@ int main(void)
     }
     LOG_INF("Connect to Wifi");
 
-    k_tid_t my_tid = k_thread_create(&osc_thread_data, osc_stack_area,
-                            K_THREAD_STACK_SIZEOF(osc_stack_area),
-                            osc_loop,
-                            NULL, NULL, NULL,
-                            OSC_PRIORITY, 0, K_NO_WAIT);
+        int ret;
+    bool led_state = true;
+    
+    if (!gpio_is_ready_dt(&led)) {
+        LOG_INF("FAILED LED SETUP\n");
+        return 1;
+    }
 
+    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+    if (ret < 0) {
+        LOG_INF("FAILED LED CONFIGURATION\n");
+        return 1;
+    }
+    LOG_INF("Configured LED");
+
+    // Wait a bit
+    LOG_INF("Wait until I have an IP Address");
+    k_msleep(5000);
+    LOG_INF("Starting Sending OSC messages");
+
+    LOG_INF("Initialising OSC-IP1  ... ");
+    osc1 = lo_address_new("192.168.86.230", "8000");
+    LOG_INF("Configured OSC  ...");
+
+    // Create a server
+    osc_server = lo_server_new("8000", error);
+    lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
+
+    // Initialise base namespace
+    baseNamespace.append("TStick_520");
+    puara_bundle.init(baseNamespace.c_str());
+    initOSC_bundle();
+
+    // Do a slow serialising once 
+    puara_bundle.serialise();
+
+    // Print bundle size
+    LOG_INF("Bundle Size: %d", puara_bundle.data_len);
 
     // Return 0 and let threads handle it
-    return 0;
+
+    while(1) {
+        start = k_cycle_get_32();
+        // Counter
+		counter++;
+
+        // Get bundle size
+        bundle_size = puara_bundle.data_len;
+
+        // Get time
+        lo_timetag_now(&lo_tt);
+
+		// Only send if network was properly configured
+        updateOSC();
+        end = k_cycle_get_32();
+        looptime = k_cyc_to_us_ceil32((end-start));
+
+        if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
+            ret = gpio_pin_toggle_dt(&led);
+            led_state = !led_state;
+            last_time = k_uptime_get_32();
+        }
+
+        // Sleep thread for a bit
+        k_msleep(1);
+    }
 }
