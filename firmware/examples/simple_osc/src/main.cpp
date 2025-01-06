@@ -25,6 +25,12 @@
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 #include <lo/lo_types.h>
+#include <chrono>
+#include <iostream>
+
+// Get Network time
+#include <zephyr/net/sntp.h>
+#include <sys/time.h>
 
 // Logger
 LOG_MODULE_REGISTER(MAIN);
@@ -34,6 +40,7 @@ LOG_MODULE_REGISTER(MAIN);
 #define LOG_RATE_MS     5000
 #define BOOT_UP_DELAY_MS 500
 #define OSC_RATE_TICKS 10
+#define SYNC_TIME_MS 3600
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 // /* The devicetree node identifier for the "led0" alias. */
 #define LED0_NODE DT_ALIAS(led0)
@@ -52,6 +59,11 @@ LOG_MODULE_REGISTER(MAIN);
     #define WIFI_AP_IP_ADDRESS "192.168.4.1"
     #define WIFI_AP_NETMASK    "255.255.255.0"
 #endif
+
+
+// SNTP Settings
+#define SNTP_PORT 123
+#define SNTP_SERVER "au.pool.ntp.org"
 
 // Networking settings
 #include <zephyr/net/net_if.h>
@@ -239,7 +251,15 @@ lo_address osc1;
 lo_address osc2;
 oscBundle puara_bundle;
 lo_server osc_server;
+timeval tv;
+uint32_t tv_secs;
+double msg_time;
+double offset_time;
+#define FRAC_TO_SEC 0.00000000023283064365
 lo_timetag lo_tt;
+lo_timetag lo_offset_tt;
+uint32_t last_sync;
+uint32_t start_cycle;
 int secs_idx;
 int bundle_size = 0;
 int size_idx;
@@ -247,6 +267,7 @@ int counter = 0;
 int counter_idx;
 int looptime = 0;
 int looptime_idx;
+int mcu_offset = 0;
 int last_time = 0;
 int last_log_time = 0;
 bool wifi_on = false;
@@ -267,6 +288,16 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 void updateOSC();
 void initOSC_bundle();
 void updateOSC_bundle();
+double timetag_to_double(uint32_t secs, uint32_t frac);
+double timeval_to_double(timeval tv);
+
+double timetag_to_double(uint32_t secs, uint32_t frac) {
+    return double(secs) + (double(frac) * FRAC_TO_SEC);
+}
+
+double timeval_to_double(timeval tv) {
+    return double(tv.tv_sec) + ((double(tv.tv_usec) * 0.000001));
+}
 
 void error(int num, const char *msg, const char *path) {
     printf("Liblo server error %d in path %s: %s\n", num, path, msg);
@@ -289,7 +320,7 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
     updateOSC_bundle();
-    
+
     if (wifi_enabled && !ap_enabled) {
         puara_bundle.fast_send(osc1, osc_server);
     }
@@ -299,7 +330,7 @@ void initOSC_bundle() {
     puara_bundle.add(&counter_idx, "test/counter",  counter);
     puara_bundle.add(&looptime_idx, "test/looptime", looptime);
     puara_bundle.add(&size_idx, "test/bundlelength", bundle_size);
-    puara_bundle.add(&secs_idx, "test/secs", lo_tt);
+    puara_bundle.add(&secs_idx, "test/secs", msg_time);
     puara_bundle.add(&test_idx, "test_array", TEST_SIZE, test_array);
 }
 
@@ -307,7 +338,7 @@ void updateOSC_bundle() {
     puara_bundle.update_message(counter_idx,  counter);
     puara_bundle.update_message(looptime_idx, looptime);
     puara_bundle.update_message(size_idx, bundle_size);
-    puara_bundle.update_message(secs_idx, lo_tt);
+    puara_bundle.update_message(secs_idx, msg_time);
     puara_bundle.update_message(test_idx, TEST_SIZE, test_array);
 }
 
@@ -343,9 +374,6 @@ int main(void)
     }
     LOG_INF("AP: is initialized");
 
-    // Wait a bit
-    k_msleep(2000);
-
     // Connect to wifi
     connect_to_wifi();
     // enable_ap_mode();
@@ -374,8 +402,23 @@ int main(void)
     // Wait a bit
     LOG_INF("Wait until I have an IP Address");
     k_msleep(5000);
-    LOG_INF("Starting Sending OSC messages");
 
+    // Get SNTP clock
+    /* ipv4 */
+    struct sntp_time sntp_time;
+    int rv;
+    start = k_cycle_get_32();
+    rv = sntp_simple(SNTP_SERVER, 3600, &sntp_time);
+    start_cycle = k_cycle_get_32();
+    mcu_offset = k_cyc_to_us_ceil32((start_cycle-start));
+
+    LOG_INF("status: %d", rv);
+	LOG_INF("time since Epoch: high word: %u, low word: %u, fraction: %u", (uint32_t)(sntp_time.seconds >> 32), (uint32_t)sntp_time.seconds, sntp_time.fraction);
+    LOG_INF("MCU offset: %d", mcu_offset);
+    offset_time = timetag_to_double((uint32_t)sntp_time.seconds, sntp_time.fraction);
+    LOG_INF("Offset time %lf", offset_time);
+
+    // Initialise the OSC address
     LOG_INF("Initialising OSC-IP1  ... ");
     osc1 = lo_address_new("192.168.86.230", "8000");
     LOG_INF("Configured OSC  ...");
@@ -394,8 +437,7 @@ int main(void)
 
     // Print bundle size
     LOG_INF("Bundle Size: %d", puara_bundle.data_len);
-
-    // Return 0 and let threads handle it
+    LOG_INF("Starting Sending OSC messages");
 
     while(1) {
         start = k_cycle_get_32();
@@ -405,8 +447,14 @@ int main(void)
         // Get bundle size
         bundle_size = puara_bundle.data_len;
 
-        // Get time
-        lo_timetag_now(&lo_tt);
+        // Update sntp time
+        msg_time = offset_time + (double(k_cyc_to_ms_ceil32(k_cycle_get_32() - start_cycle)) * 0.001);
+
+        // // Get time
+        // gettimeofday(&tv, NULL);
+
+        // // Get time double
+        // msg_time = timeval_to_double(tv);
 
 		// Only send if network was properly configured
         updateOSC();
