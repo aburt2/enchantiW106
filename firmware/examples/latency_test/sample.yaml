@@ -1,0 +1,15 @@
+common:
+  harness: net
+  tags:
+    - net
+    - wifi
+sample:
+  description: Test OSC driver
+  name: OSC sample app
+tests:
+  sample.net.wifi.nxp_wifi:
+    extra_args:
+      - CONFIG_NXP_WIFI_BUILD_ONLY_MODE=y
+    platform_allow:
+      - frdm_rw612
+      - rd_rw612_bga
