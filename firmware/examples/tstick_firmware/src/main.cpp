@@ -301,8 +301,7 @@ struct Sensors {
     float touchBottom;      
     int mergedtouch[TSTICK_SIZE];
     int mergeddiscretetouch[TSTICK_SIZE];
-    int counter;
-    int looptime;
+    int debug[2];
 } sensors;
 
 
@@ -335,8 +334,7 @@ struct uLiblo {
     int touchBottom;      
     int mergedtouch;
     int mergeddiscretetouch;
-    int counter;
-    int looptime;
+    int debug;
 } ulo;
 
 
@@ -440,8 +438,7 @@ void initOSC_bundle() {
     puara_bundle.add(&ulo.voltage, "battery/voltage", sensors.voltage);  
 
     // Add counter
-    puara_bundle.add(&ulo.counter, "test/counter", sensors.counter);
-    puara_bundle.add(&ulo.looptime, "test/looptime", sensors.looptime);
+    puara_bundle.add(&ulo.debug, "debug", 2, sensors.debug);
 }
 
 void updateOSC_bundle() {
@@ -484,8 +481,7 @@ void updateOSC_bundle() {
     puara_bundle.update_message(ulo.voltage, sensors.voltage);
 
     // Add counter
-    puara_bundle.update_message(ulo.counter, sensors.counter);
-    puara_bundle.update_message(ulo.looptime, sensors.looptime);
+    puara_bundle.update_message(ulo.debug, 2, sensors.debug);
 }
 
 // /* The devicetree node identifier for the "led0" alias. */
@@ -964,11 +960,11 @@ int main(void)
         updateMIMU();
 
         // Counter
-		sensors.counter++;
+		sensors.debug[0]++;
 
 		// Time Sensor read length
         end = k_cycle_get_32();
-        sensors.looptime = k_cyc_to_us_ceil32(end-start);
+        sensors.debug[1] = k_cyc_to_us_ceil32(end-start);
 
         // Send OSC
         updateOSC();

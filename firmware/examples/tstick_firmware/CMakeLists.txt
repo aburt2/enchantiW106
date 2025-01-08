@@ -36,6 +36,7 @@ FILE(GLOB liblo_sources
     ${LIBMAPPER_SOURCE_PATH}/lo/*.c
     ${LIBMAPPER_SOURCE_PATH}/compat/*.c
     ${LIBMAPPER_SOURCE_PATH}/zlib/*.c
+    ${LIBMAPPER_SOURCE_PATH}/*.c*
 )
 
 FILE(GLOB sensor_fusion_sources

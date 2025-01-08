@@ -27,7 +27,7 @@ echo Starting Fidelix steps...
 timeout /t 2
 
 rem Step 1: Writing FCB_FID.bin to memory
-set FCB_FID="%cd%\..\FCB_FID.bin"
+set FCB_FID="%cd%\FCB_FID.bin"
 %BLHOST_PATH% -p %COM_PORT% %TIMEOUT% -- write-memory 0x20001000 %FCB_FID%
 if %errorlevel% neq 0 goto :step_failed
 
