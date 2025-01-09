@@ -50,7 +50,7 @@ LOG_MODULE_REGISTER(MAIN);
 #define SLEEP_TIME_MS   1000
 #define LOG_RATE_MS     5000
 #define BOOT_UP_DELAY_MS 500
-#define OSC_RATE_TICKS 100
+#define OSC_RATE_TICKS 10
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 #define SEC_PER_TICK float(USEC_PER_TICK) / 1000000.0f
 #define USEC_PER_CYCLE (1000000 / CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC)
@@ -216,10 +216,8 @@ void updateOSC() {
     // Create a bundle and send it to both IP addresses
     updateOSC_bundle();
     
-    if (puara_module.get_StaIsConnected()) {
-        if (use_osc1) {
-            puara_bundle.fast_send(osc1, osc_server);
-        }
+    if (use_osc1) {
+        puara_bundle.fast_send(osc1, osc_server);
     }
 }
 
