@@ -79,192 +79,15 @@ LOG_MODULE_REGISTER(MAIN);
 #include <zephyr/net/net_event.h>
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/net/dhcpv4_server.h>
-// Network interfaces
-static struct net_if *sta_iface;
-static struct net_if *ap_iface;
-
-// Parameters
-static struct wifi_connect_req_params sta_config;
-static struct wifi_connect_req_params ap_config;
-static struct net_mgmt_event_callback cb;
-
-// Wifi status
-bool wifi_enabled = false;
-bool ap_enabled = false;
-
-#define MACSTR "%02X:%02X:%02X:%02X:%02X:%02X"
-
-#define NET_EVENT_WIFI_MASK                                                                        \
-	(NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT |                        \
-	 NET_EVENT_WIFI_AP_ENABLE_RESULT | NET_EVENT_WIFI_AP_DISABLE_RESULT |                      \
-	 NET_EVENT_WIFI_AP_STA_CONNECTED | NET_EVENT_WIFI_AP_STA_DISCONNECTED)
-
-
-// Functions declarations
-static int connect_to_wifi(void);
-static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
-			       struct net_if *iface);
-
-
-// Function definitions
-static int connect_to_wifi(void)
-{
-	if (!sta_iface) {
-		LOG_INF("STA: interface no initialized");
-		return -EIO;
-	}
-
-	sta_config.ssid = (const uint8_t *)WIFI_SSID;
-	sta_config.ssid_length = strlen(WIFI_SSID);
-	sta_config.psk = (const uint8_t *)WIFI_PSK;
-	sta_config.psk_length = strlen(WIFI_PSK);
-	sta_config.security = WIFI_SECURITY_TYPE_PSK;
-	sta_config.channel = WIFI_CHANNEL_ANY;
-	sta_config.band = WIFI_FREQ_BAND_UNKNOWN;
-    sta_config.bandwidth = WIFI_FREQ_BANDWIDTH_20MHZ;
-    sta_config.mfp = WIFI_MFP_OPTIONAL;
-
-	LOG_INF("Connecting to SSID: %s\n", sta_config.ssid);
-
-    // Setup command
-    int ret = 0;
-    // char wifi_shell_cmd[128] =  "wifi connect -s TEST_SSID -p TEST_PSK -k 1 -b 5";
-    // sprintf(wifi_shell_cmd, "wifi connect -s %s -p %s -k 1 -b 5", WIFI_SSID, WIFI_PSK);
-    // LOG_INF("SHELL CMD: %s", wifi_shell_cmd);
-    // ret = shell_execute_cmd(shell_backend_uart_get_ptr(), wifi_shell_cmd);
-    
-	ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, sta_iface, &sta_config,
-			   sizeof(struct wifi_connect_req_params));
-
-	if (ret) {
-		LOG_ERR("Unable to Connect to (%s)", WIFI_SSID);
-	}
-
-	return ret;
-}
-
-static void enable_dhcpv4_server(void)
-{
-	static struct in_addr addr;
-	static struct in_addr netmaskAddr;
-
-	if (net_addr_pton(AF_INET, WIFI_AP_IP_ADDRESS, &addr)) {
-		LOG_ERR("Invalid address: %s", WIFI_AP_IP_ADDRESS);
-		return;
-	}
-
-	if (net_addr_pton(AF_INET, WIFI_AP_NETMASK, &netmaskAddr)) {
-		LOG_ERR("Invalid netmask: %s", WIFI_AP_NETMASK);
-		return;
-	}
-
-	net_if_ipv4_set_gw(ap_iface, &addr);
-
-	if (net_if_ipv4_addr_add(ap_iface, &addr, NET_ADDR_MANUAL, 0) == NULL) {
-		LOG_ERR("unable to set IP address for AP interface");
-	}
-
-	if (!net_if_ipv4_set_netmask_by_addr(ap_iface, &addr, &netmaskAddr)) {
-		LOG_ERR("Unable to set netmask for AP interface: %s", WIFI_AP_NETMASK);
-	}
-
-	addr.s4_addr[3] += 10; /* Starting IPv4 address for DHCPv4 address pool. */
-
-	if (net_dhcpv4_server_start(ap_iface, &addr) != 0) {
-		LOG_ERR("DHCP server is not started for desired IP");
-		return;
-	}
-
-	LOG_INF("DHCPv4 server started...\n");
-}
-
-static int enable_ap_mode(void)
-{
-	if (!ap_iface) {
-		LOG_INF("AP: is not initialized");
-		return -EIO;
-	}
-
-	LOG_INF("Turning on AP Mode");
-	ap_config.ssid = (const uint8_t *)WIFI_AP_SSID;
-	ap_config.ssid_length = strlen(WIFI_AP_SSID);
-	ap_config.psk = (const uint8_t *)WIFI_AP_PSK;
-	ap_config.psk_length = strlen(WIFI_AP_PSK);
-	ap_config.channel = WIFI_CHANNEL_ANY;
-	ap_config.band = WIFI_FREQ_BAND_2_4_GHZ;
-    ap_config.bandwidth = WIFI_FREQ_BANDWIDTH_20MHZ;
-
-	if (strlen(WIFI_AP_PSK) == 0) {
-		ap_config.security = WIFI_SECURITY_TYPE_NONE;
-	} else {
-
-		ap_config.security = WIFI_SECURITY_TYPE_PSK;
-	}
-
-	enable_dhcpv4_server();
-
-	int ret = net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ap_iface, &ap_config,
-			   sizeof(struct wifi_connect_req_params));
-	if (ret) {
-		LOG_ERR("NET_REQUEST_WIFI_AP_ENABLE failed, err: %d", ret);
-	}
-
-	return ret;
-}
-
-static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
-			       struct net_if *iface)
-{
-	switch (mgmt_event) {
-	case NET_EVENT_WIFI_CONNECT_RESULT: {
-		LOG_INF("Connected to %s", WIFI_SSID);
-        wifi_enabled = true;
-		break;
-	}
-	case NET_EVENT_WIFI_DISCONNECT_RESULT: {
-		LOG_INF("Disconnected from %s", WIFI_SSID);
-        wifi_enabled = false;
-		break;
-	}
-	case NET_EVENT_WIFI_AP_ENABLE_RESULT: {
-		LOG_INF("AP Mode is enabled. Waiting for station to connect");
-        wifi_enabled = false;
-		break;
-	}
-	case NET_EVENT_WIFI_AP_DISABLE_RESULT: {
-		LOG_INF("AP Mode is disabled.");
-        ap_enabled = false;
-		break;
-	}
-	case NET_EVENT_WIFI_AP_STA_CONNECTED: {
-		struct wifi_ap_sta_info *sta_info = (struct wifi_ap_sta_info *)cb->info;
-
-		LOG_INF("station: " MACSTR " joined ", sta_info->mac[0], sta_info->mac[1],
-			sta_info->mac[2], sta_info->mac[3], sta_info->mac[4], sta_info->mac[5]);
-		break;
-	}
-	case NET_EVENT_WIFI_AP_STA_DISCONNECTED: {
-		struct wifi_ap_sta_info *sta_info = (struct wifi_ap_sta_info *)cb->info;
-
-		LOG_INF("station: " MACSTR " leave ", sta_info->mac[0], sta_info->mac[1],
-			sta_info->mac[2], sta_info->mac[3], sta_info->mac[4], sta_info->mac[5]);
-		break;
-	}
-	default:
-		break;
-	}
-}
+#include "puara.h"
 
 /******* Variables to Send *********/
 lo_address osc1;
 lo_address osc2;
 lo_server osc_server;
 oscBundle puara_bundle;
-int counter = 0;
-int looptime = 0;
-int last_time = 0;
-int last_log_time = 0;
-bool wifi_on = false;
+bool use_osc1;
+bool use_osc2;
 int start = 0;
 int end = 0;
 #define TSTICK_SIZE 60
@@ -393,51 +216,54 @@ void updateOSC() {
     // Create a bundle and send it to both IP addresses
     updateOSC_bundle();
     
-    if (wifi_enabled && !ap_enabled) {
-        puara_bundle.fast_send(osc1, osc_server);
+    if (puara_module.get_StaIsConnected()) {
+        if (use_osc1) {
+            puara_bundle.fast_send(osc1, osc_server);
+        }
     }
 }
 
 void initOSC_bundle() {
-    // Continuously send FSR data
+    // Continuously send FSR data (4)
     puara_bundle.add(&ulo.fsr, "raw/fsr", 2, sensors.fsr);
     puara_bundle.add(&ulo.squeeze, "instrument/squeeze", 2, sensors.squeeze);
 
-    //Send touch data
+    //Send touch data (4 + TSTICK SIZE)
     puara_bundle.add(&ulo.touchAll, "instrument/touch/all", sensors.touchAll);
     puara_bundle.add(&ulo.touchTop, "instrument/touch/top", sensors.touchTop);
     puara_bundle.add(&ulo.touchMiddle, "instrument/touch/middle", sensors.touchMiddle);
     puara_bundle.add(&ulo.touchBottom, "instrument/touch/bottom", sensors.touchBottom);
     puara_bundle.add(&ulo.mergedtouch, "raw/capsense", TSTICK_SIZE, sensors.mergedtouch);
-    // Touch gestures
+
+    // Touch gestures (10)
     puara_bundle.add(&ulo.brush, "instrument/brush", sensors.brush);
     puara_bundle.add(&ulo.multibrush, "instrument/multibrush", 4, sensors.multibrush);
     puara_bundle.add(&ulo.rub, "instrument/rub", sensors.rub);
     puara_bundle.add(&ulo.multirub, "instrument/multirub", 4, sensors.multirub);
     
-    // MIMU data
+    // MIMU data (16)
     puara_bundle.add(&ulo.accl, "raw/accl", 3, sensors.accl);
     puara_bundle.add(&ulo.gyro, "raw/gyro", 3, sensors.gyro);
     puara_bundle.add(&ulo.magn, "raw/magn", 3, sensors.magn);
     puara_bundle.add(&ulo.ypr, "ypr", 3, sensors.ypr); 
     puara_bundle.add(&ulo.quat,"orientation", 4, sensors.quat); 
 
-    // Inertial gestures
+    // Inertial gestures (6)
     puara_bundle.add(&ulo.shake, "instrument/shakexyz", 3, sensors.shake);
     puara_bundle.add(&ulo.jab, "instrument/jabxyz", 3, sensors.jab);
-    // Button Gestures
+    // Button Gestures (4)
     puara_bundle.add(&ulo.count, "instrument/button/count", sensors.count);
     puara_bundle.add(&ulo.tap, "instrument/button/tap", sensors.tap);
     puara_bundle.add(&ulo.dtap, "instrument/button/dtap", sensors.dtap);
     puara_bundle.add(&ulo.ttap, "instrument/button/ttap", sensors.ttap);
 
-    // Battery Data
+    // Battery Data (4)
     puara_bundle.add(&ulo.battery, "battery/percentage", sensors.battery);
     puara_bundle.add(&ulo.current, "battery/current", sensors.current);
     puara_bundle.add(&ulo.tte, "battery/timetoempty", sensors.tte);
     puara_bundle.add(&ulo.voltage, "battery/voltage", sensors.voltage);  
 
-    // Add counter
+    // Add counter (2)
     puara_bundle.add(&ulo.debug, "debug", 2, sensors.debug);
 }
 
@@ -750,10 +576,10 @@ void readBattery() {
 
 void changeLED() {
     // TODO: USE PWM instead of toggle
-    if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
+    if ((k_uptime_get_32() - led.timer) > led.interval) {
         gpio_pin_toggle_dt(&blue_led);
         led_state = !led_state;
-        last_time = k_uptime_get_32();
+        led.timer = k_uptime_get_32();
     }
 }
 
@@ -820,10 +646,10 @@ int initDevices() {
     LOG_INF("Configured LDO");
 
     // Check if sensor device is ready
-    if (!device_is_ready(fuelgauge)) {
-		LOG_ERR("fuelgauge: device not ready.\n");
-		return 1;
-	}
+    // if (!device_is_ready(fuelgauge)) {
+	// 	LOG_ERR("fuelgauge: device not ready.\n");
+	// 	return 1;
+	// }
     LOG_INF("Configured Fuel Gauge  ...");
     if (!device_is_ready(imu)) {
 		LOG_ERR("imu: device not ready.\n");
@@ -873,35 +699,19 @@ int main(void)
         return 1;
     }
 
-    // Adding network call back events
-    net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);
-	net_mgmt_add_event_callback(&cb);
+    // Wait a bit for the network manager to start
+    k_msleep(500);
 
-    // Wait for iface to be initialised
-    sta_iface = net_if_get_wifi_sta();
-    while (!sta_iface) {
-        LOG_INF("STA: is not initialized");
-        sta_iface = net_if_get_wifi_sta();
-    }
-    LOG_INF("STA: is initialized");
-
-    // Wait for ap to be initialised
-    ap_iface = net_if_get_wifi_sap();
-    while (!ap_iface) {
-        LOG_INF("AP: is not initialized");
-        ap_iface = net_if_get_wifi_sap();
-    }
-    LOG_INF("AP: is initialized");
+    // Set wifi module settings
+    LOG_INF("Initialising Puara Module");
+    puara_module.start();
+    LOG_INF("Initialised Puara Module");
 
     // Wait a bit
     k_msleep(2000);
 
-    // Connect to wifi
-    connect_to_wifi();
-    // enable_ap_mode();
-
     // Start OSC thread
-    while (!wifi_enabled) {
+    while (!puara_module.get_StaIsConnected()) {
         k_msleep(500);
     }
     LOG_INF("Connect to Wifi");
@@ -910,10 +720,17 @@ int main(void)
     ret = gpio_pin_toggle_dt(&orange_led);
 
     // Don't start another thread just use main
-    LOG_INF("Initialising OSC-IP1  ... ");
-    osc1 = lo_address_new(OSC_ADDRESS, OSC_PORT);
-    LOG_INF("Configured OSC  ...");
-
+    if (puara_module.IP1_ready()) {
+        LOG_INF("Initialising OSC-IP1  ... ");
+        use_osc1 = true;
+        osc1 = lo_address_new(puara_module.getIP1().c_str(), puara_module.getPORT1Str().c_str());
+    }
+    if (puara_module.IP2_ready()) {
+        use_osc2 = true;
+        osc2 = lo_address_new(puara_module.getIP2().c_str(), puara_module.getPORT2Str().c_str());
+    }
+    
+    
     // Create a server
     osc_server = lo_server_new("8000", error);
     lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
@@ -925,10 +742,7 @@ int main(void)
     // Init puara bundle
     puara_bundle.init(baseNamespace.c_str());
     initOSC_bundle();
-
     LOG_INF("Bundle initialised with %d messages", puara_bundle.num_messages);
-
-
     // Wait a bit
     LOG_INF("Wait until I have an IP Address");
     k_msleep(5000);
@@ -954,7 +768,7 @@ int main(void)
 
         // Read touch
         // TODO: use non blocking i2c call
-        readTouch();
+        // readTouch();
         
         // Get Data from IMU and magnetometer
         updateMIMU();
@@ -973,7 +787,7 @@ int main(void)
         changeLED();
 
         // Sleep thread for a bit
-        k_yield();
+        k_sleep(K_TIMEOUT_ABS_TICKS(OSC_RATE_TICKS));
     }
 
     //     // Test serialisation speed
