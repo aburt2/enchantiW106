@@ -43,18 +43,15 @@
 // Sensors
 #include "enchanti_touch.h"
 
-// Logger
-LOG_MODULE_REGISTER(MAIN);
-
 /* 1000 msec = 1 sec */
 #define SLEEP_TIME_MS   1000
 #define LOG_RATE_MS     5000
 #define BOOT_UP_DELAY_MS 500
-#define OSC_RATE_TICKS 10
+#define OSC_RATE_TICKS 100
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 #define SEC_PER_TICK float(USEC_PER_TICK) / 1000000.0f
 #define USEC_PER_CYCLE (1000000 / CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC)
-
+#define TSTICK_SLEEP_TICKS K_USEC(OSC_RATE_TICKS)
 /* STA/AP Mode Configuration */
 // Define custom password in ssid_config.h
 #if __has_include("ssid_config.h")
@@ -182,9 +179,10 @@ struct sensor_timers {
 struct sensor_timers battery(5000);
 struct sensor_timers magnetometer(4);
 struct sensor_timers led(SLEEP_TIME_MS);
-struct sensor_timers sensor_fusion(1);
+struct sensor_timers sensor_fusion(0);
 struct sensor_timers debounce(25);
 struct sensor_timers button_hold(5000);
+struct sensor_timers osc(0);
 
 // OSC Helpers
 void error(int num, const char *msg, const char *path);
@@ -390,13 +388,16 @@ float accelg[3];
 #define RAD_TO_DEGREES 180.0f / M_PIF
 
 /* Sensor Helpers */
+volatile bool imu_drdy = false;
+static void handle_6dof_motion_drdy(const struct device *dev, const struct sensor_trigger *trig);
+void updateMIMU();
 void readIMU();
+
 void readButton();
 void readTouch();
 void readAnalog();
 void readBattery();
 void changeLED();
-void updateMIMU();
 int initDevices();
 float normDegree(float val);
 
@@ -431,7 +432,7 @@ void readAnalog() {
         int err;
         err = adc_read_dt(&adc_channels[i], &sequence);
         if (err < 0) {
-            LOG_ERR("Could not read (%d)\n", err);
+            printk("Could not read (%d)\n", err);
             continue;
         }
 
@@ -458,9 +459,28 @@ void readTouch() {
     memcpy(sensors.mergeddiscretetouch, touch.discreteTouch, sizeof(int) * TSTICK_SIZE);
 }
 
+static void handle_6dof_motion_drdy(const struct device *dev, const struct sensor_trigger *trig)
+{
+	if (trig->type == SENSOR_TRIG_DATA_READY) {
+		int rc = sensor_sample_fetch_chan(dev, trig->chan);
+
+		if (rc < 0) {
+			printf("sample fetch failed: %d\n", rc);
+			printf("cancelling trigger due to failure: %d\n", rc);
+			(void)sensor_trigger_set(dev, trig, NULL);
+			return;
+		} else if (rc == 0) {
+			imu_drdy = true;
+		}
+	}
+}
+
 void readIMU() {
     // Read data from IMU
-    sensor_sample_fetch(imu);
+    #ifdef CONFIG_ICM42670_TRIGGER
+    sensor_sample_fetch_chan(imu, SENSOR_CHAN_ACCEL_XYZ);
+    sensor_sample_fetch_chan(imu, SENSOR_CHAN_GYRO_XYZ);
+    #endif
 
     // Store sensor info
 	struct sensor_value accel[3], gyro[3];
@@ -503,14 +523,15 @@ float normDegree(float val) {
     return val;
 }
 
+static struct sensor_trigger imu_trigger;
 void updateMIMU() {
     // Update my data, at least 1kHz
+    // Read IMU data
+    readIMU();
+    
     if (k_uptime_get_32() - sensor_fusion.timer > 0) {
-        // Read IMU data
-        readIMU();
-
         // Update sensor fusion
-        uint32_t deltaT = (k_uptime_get_32() - sensor_fusion.timer) * 0.001f;
+        float deltaT = (k_uptime_get_32() - sensor_fusion.timer) * 0.001f;
 
         // Perform sensor fusion
         orientation.setAccelerometerValues(accelg[0], accelg[1], accelg[2]);
@@ -545,9 +566,10 @@ void updateMIMU() {
 
         // Update sensor fusion timer
         sensor_fusion.timer = k_uptime_get_32();;
-        events.mag = false;
     }
 }
+
+
 
 // Data from the fuel gauge
 void readBattery() {
@@ -587,100 +609,109 @@ int initDevices() {
 
     // Initialise Button
     if (!gpio_is_ready_dt(&button)) {
-		LOG_ERR("Error: button device %s is not ready\n",
+		printk("Error: button device %s is not ready\n",
 		       button.port->name);
 		return 1;
 	}
 	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
 	if (ret != 0) {
-		LOG_ERR("Error %d: failed to configure %s pin %d\n",
+		printk("Error %d: failed to configure %s pin %d\n",
 		       ret, button.port->name, button.pin);
 		return ret;
     }
 
     ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret != 0) {
-		LOG_ERR("Error %d: failed to configure interrupt on %s pin %d\n",
+		printk("Error %d: failed to configure interrupt on %s pin %d\n",
 			ret, button.port->name, button.pin);
 		return ret;
 	}
     gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
-    LOG_INF("Configured Buttons  ...");
+    printk("Configured Buttons  ...\n");
 
     // Wait for wifi network manager to be initialised
     k_msleep(BOOT_UP_DELAY_MS);
 
     // Turn on Orange LED
     if (!gpio_is_ready_dt(&orange_led)) {
-        LOG_INF("FAILED ORANGE LED SETUP\n");
+        printk("FAILED ORANGE LED SETUP\n");
         return 1;
     }
 
     ret = gpio_pin_configure_dt(&orange_led, GPIO_OUTPUT_ACTIVE);
     if (ret < 0) {
-        LOG_INF("FAILED ORANGE LED CONFIGURATION\n");
+        printk("FAILED ORANGE LED CONFIGURATION\n");
         return 1;
     }
     // Turn off BLue LED
     if (!gpio_is_ready_dt(&blue_led)) {
-        LOG_INF("FAILED BLUE LED SETUP\n");
+        printk("FAILED BLUE LED SETUP\n");
         return 1;
     }
 
     ret = gpio_pin_configure_dt(&blue_led, GPIO_OUTPUT_INACTIVE);
     if (ret < 0) {
-        LOG_INF("FAILED BLUE LED CONFIGURATION\n");
+        printk("FAILED BLUE LED CONFIGURATION\n");
         return 1;
     }
-    LOG_INF("Configured LED");
+    printk("Configured LED\n");
 
     // Enable LDO
     ret = gpio_pin_configure_dt(&ldo_en, GPIO_OUTPUT_ACTIVE);
     if (ret < 0) {
-        LOG_INF("FAILED LDO CONFIGURATION\n");
+        printk("FAILED LDO CONFIGURATION\n");
         return 1;
     }
-    LOG_INF("Configured LDO");
+    printk("Configured LDO\n");
 
     // Check if sensor device is ready
     // if (!device_is_ready(fuelgauge)) {
-	// 	LOG_ERR("fuelgauge: device not ready.\n");
+	// 	printk("fuelgauge: device not ready.\n");
 	// 	return 1;
 	// }
-    LOG_INF("Configured Fuel Gauge  ...");
+    // printk("Configured Fuel Gauge  ...\n");
     if (!device_is_ready(imu)) {
-		LOG_ERR("imu: device not ready.\n");
+		printk("imu: device not ready.\n");
 		return 1;
-	}
-    LOG_INF("Configured IMU  ...");
+	} else {
+        imu_trigger = (struct sensor_trigger){
+            .type = SENSOR_TRIG_DATA_READY,
+            .chan = SENSOR_CHAN_ALL,
+        };
+        if (sensor_trigger_set(imu, &imu_trigger, handle_6dof_motion_drdy) < 0) {
+            printk("Cannot configure data trigger!!!");
+            return 0;
+	    }
+    }
+    printk("Configured IMU  ...\n");
     if (!device_is_ready(magn)) {
-		LOG_ERR("magnetometer: device not ready.\n");
+		printk("magnetometer: device not ready.\n");
 		return 1;
 	}
-    LOG_INF("Configured Magnetometer  ...");
+    printk("Configured Magnetometer  ...\n");
 
     // Init touch
     int err = touch.initTouch(tstick_touchconfig);
     if (err == 0) {
-        LOG_ERR("touch: device not ready.\n");
+        printk("touch: device not ready.\n");
         return 1;
     }
-    LOG_INF("Configured Touch sensor  ...");
+    printk("Configured Touch sensor  ...\n");
 
     /* Configure adc channels individually prior to sampling. */
 	for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
 		if (!adc_is_ready_dt(&adc_channels[i])) {
-			LOG_ERR("ADC controller device %s not ready\n", adc_channels[i].dev->name);
+			printk("ADC controller device %s not ready\n", adc_channels[i].dev->name);
 			return 1;
 		}
 
 		int err = adc_channel_setup_dt(&adc_channels[i]);
 		if (err < 0) {
-			LOG_ERR("Could not setup channel #%d (%d)\n", i, err);
+			printk("Could not setup channel #%d (%d)\n", i, err);
 			return 1;
 		}
-        LOG_INF("Configured ADC %s ...", adc_channels[i].dev->name);
+        printk("Configured ADC %s ...\n", adc_channels[i].dev->name);
 	}
 
     // if we got through all of that
@@ -693,7 +724,7 @@ int main(void)
     int ret;
     ret = initDevices();
     if (ret != 0) {
-        LOG_ERR("Devices failed to init");
+        printk("Devices failed to init\n");
         return 1;
     }
 
@@ -708,7 +739,7 @@ int main(void)
 
     // Don't start another thread just use main
     if (puara_module.IP1_ready()) {
-        LOG_INF("Initialising OSC-IP1  ... ");
+        printk("Initialising OSC-IP1  ... \n");
         use_osc1 = true;
         osc1 = lo_address_new(puara_module.getIP1().c_str(), puara_module.getPORT1Str().c_str());
     }
@@ -729,14 +760,23 @@ int main(void)
     // Init puara bundle
     puara_bundle.init(baseNamespace.c_str());
     initOSC_bundle();
-    LOG_INF("Bundle initialised with %d messages", puara_bundle.num_messages);
+    printk("Bundle initialised with %d messages\n", puara_bundle.num_messages);
     
     // Serialise the bundle once
     puara_bundle.serialise();
 
+    // Wait a bit before starting
+    k_msleep(500);
+
     while(1) {
         // Get data from fuelgauge
+        // start = k_cycle_get_32();
         start = k_cycle_get_32();
+
+        // Update LED
+        changeLED();
+
+        // Get battery data
         if ((k_uptime_get_32() - battery.timer) > battery.interval) {
             readBattery();
             battery.timer = k_uptime_get_32();
@@ -754,57 +794,28 @@ int main(void)
         // readTouch();
         
         // Get Data from IMU and magnetometer
-        updateMIMU();
-
+        if (imu_drdy) {
+            updateMIMU();
+            imu_drdy = false;
+        }
+        
         // Counter
 		sensors.debug[0]++;
 
 		// Time Sensor read length
+        // end = k_cycle_get_32();
+        // sensors.debug[1] = k_cyc_to_us_ceil32(end-start);
         end = k_cycle_get_32();
-        sensors.debug[1] = k_cyc_to_us_ceil32(end-start);
-
+        sensors.debug[1] = end-start;
         // Send OSC
-        updateOSC();
-        
-        // Update LED
-        changeLED();
-
-        // Sleep thread for a bit
-        k_sleep(K_TIMEOUT_ABS_TICKS(OSC_RATE_TICKS));
+        if ((k_uptime_get_32() - osc.timer) > osc.interval) {
+            osc.timer = k_uptime_get_32();
+            updateOSC();
+            k_yield();
+        } else {
+            k_sleep(TSTICK_SLEEP_TICKS);
+        }
     }
-
-    //     // Test serialisation speed
-    // int num_loops = 1000;
-    // while(1) {
-    //     // Test serialise speed
-    //     start = k_uptime_ticks();
-    //     for (int i = 0; i < num_loops; i++) {
-    //         puara_bundle.fast_serialise();
-    //     }
-    //     end = k_uptime_ticks();
-    //     sensors.debug[1] = ((end - start) * USEC_PER_TICK) / num_loops;
-    //     LOG_INF("Serialising time: %d", sensors.debug[1]);
-    //     // Test updating speed
-    //     start = k_uptime_ticks();
-    //     for (int i = 0; i < num_loops; i++) {
-    //         updateOSC();
-    //     }
-    //     end = k_uptime_ticks();
-    //     sensors.debug[2] = ((end - start) * USEC_PER_TICK) / num_loops;
-    //     sensors.debug[2] = sensors.debug[2];
-    //     LOG_INF("Sending time: %d", sensors.debug[2]);
-    //     LOG_INF("Bundle Size: %d", puara_bundle.data_len);
-
-    //     // Update counter
-    //     sensors.debug[0]++;
-
-    //     // sleep a biy
-    //     k_yield();
-    // }
-
-    // NOtes for Performance
-    // Sending OSC data ~= 160 - 300us
-    // IMU sensor fusion + data gathering ~= 300us
-    // ADC ~= 100us
-    // Readfing touch ~= 1000us
+    // If I got here something crashed
+    return 1;
 }
