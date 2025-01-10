@@ -42,8 +42,8 @@
 &arduino_spi {
     status = "okay";
 
-    imu0: icm42670@0 {
-		compatible = "invensense,icm42670";
+    imu0: icm42670p@0 {
+		compatible = "invensense,icm42670p";
 		spi-max-frequency = <24000000>;
 		reg = <0>;
 		int-gpios = <&hsgpio1 22 GPIO_ACTIVE_HIGH>;

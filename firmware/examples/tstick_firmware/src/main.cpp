@@ -367,7 +367,7 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 * Sensor Devices
 */
 const struct device *const fuelgauge = DEVICE_DT_GET_ONE(maxim_max17262);
-const struct device *const imu = DEVICE_DT_GET_ONE(invensense_icm42670);
+const struct device *const imu = DEVICE_DT_GET_ONE(invensense_icm42670p);
 const struct device *const magn = DEVICE_DT_GET_ONE(memsic_mmc56x3);
 EnchantiTouch touch;
 enchanti_touch_config tstick_touchconfig = {
@@ -700,19 +700,8 @@ int main(void)
     // Wait a bit for the network manager to start
     k_msleep(500);
 
-    // Set wifi module settings
-    LOG_INF("Initialising Puara Module");
+    // Start Puara Module
     puara_module.start();
-    LOG_INF("Initialised Puara Module");
-
-    // Wait a bit
-    k_msleep(2000);
-
-    // Start OSC thread
-    while (!puara_module.get_StaIsConnected()) {
-        k_msleep(500);
-    }
-    LOG_INF("Connect to Wifi");
 
     // toggle off LED once wifi is connected
     ret = gpio_pin_toggle_dt(&orange_led);
@@ -741,10 +730,6 @@ int main(void)
     puara_bundle.init(baseNamespace.c_str());
     initOSC_bundle();
     LOG_INF("Bundle initialised with %d messages", puara_bundle.num_messages);
-    // Wait a bit
-    LOG_INF("Wait until I have an IP Address");
-    k_msleep(5000);
-    LOG_INF("Starting Sending OSC messages");
     
     // Serialise the bundle once
     puara_bundle.serialise();
