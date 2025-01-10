@@ -813,7 +813,7 @@ int main(void)
             updateOSC();
             k_yield();
         } else {
-            k_sleep(TSTICK_SLEEP_TICKS);
+            k_sleep(TSTICK_SLEEP_TICKS); // sleep for 100us to allow the interrupts and the uart driver to work 
         }
     }
     // If I got here something crashed
