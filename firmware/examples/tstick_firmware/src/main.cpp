@@ -344,13 +344,11 @@ static enum adc_action sample_with_interval_callback(const struct device *dev,
 						     const struct adc_sequence *sequence,
 						     uint16_t sampling_index)
 {
-    for (int i = 0; i < ARRAY_SIZE(adc_channels); i++) {
+    for (int i = 0; i < num_adc_channels; i++) {
         sensors.fsr[i] = (int32_t)buf[i];
     }
 	return ADC_ACTION_REPEAT;
 }
-
-
 
 /*
  * Get button configuration from the devicetree sw0 alias. This is mandatory.
