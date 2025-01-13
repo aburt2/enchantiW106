@@ -336,12 +336,21 @@ static const struct adc_dt_spec adc_channels[] = {
 };
 
 // ADC structures
-uint16_t buf;
-struct adc_sequence sequence = {
-    .buffer = &buf,
-    /* buffer size in bytes, not number of samples */
-    .buffer_size = sizeof(buf),
-};
+#define ADC_PERIOD_MS 1
+int num_adc_channels = ARRAY_SIZE(adc_channels);
+uint16_t buf[2];
+k_poll_signal async_sig = K_POLL_SIGNAL_INITIALIZER(async_sig);
+static enum adc_action sample_with_interval_callback(const struct device *dev,
+						     const struct adc_sequence *sequence,
+						     uint16_t sampling_index)
+{
+    for (int i = 0; i < ARRAY_SIZE(adc_channels); i++) {
+        sensors.fsr[i] = (int32_t)buf[i];
+    }
+	return ADC_ACTION_REPEAT;
+}
+
+
 
 /*
  * Get button configuration from the devicetree sw0 alias. This is mandatory.
@@ -427,7 +436,33 @@ void readButton() {
 
 void readAnalog() {
     // Read analog sensor
-    for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
+    #ifdef CONFIG_ADC_ASYNC
+    void *user_data = &num_adc_channels;
+
+    const struct adc_sequence_options options = {
+        .interval_us = 1000 * ADC_PERIOD_MS,
+        .callback = sample_with_interval_callback,
+        .user_data = user_data,
+    };
+    struct adc_sequence sequence = {
+        .options = &options,
+        .buffer = &buf,
+        /* buffer size in bytes, not number of samples */
+        .buffer_size = sizeof(buf),
+    };
+
+    (void)adc_sequence_init_dt(&adc_channels[0], &sequence);
+
+    if (num_adc_channels > 1) {
+        sequence.channels |=  BIT(adc_channels[1].channel_id);
+    }
+
+    int err;
+    err = adc_read_async(adc_channels[0].dev, &sequence, &async_sig);
+    if (err < 0) {
+        printk("Could not read (%d)\n", err);
+    }
+    #else
         (void)adc_sequence_init_dt(&adc_channels[i], &sequence);
         int err;
         err = adc_read_dt(&adc_channels[i], &sequence);
@@ -435,18 +470,8 @@ void readAnalog() {
             printk("Could not read (%d)\n", err);
             continue;
         }
-
-        /*
-        * If using differential mode, the 16 bit value
-        * in the ADC sample buffer should be a signed 2's
-        * complement value.
-        */
-        if (adc_channels[i].channel_cfg.differential) {
-            sensors.fsr[i] = (int32_t)((int16_t)buf);
-        } else {
-            sensors.fsr[i] = (int32_t)buf;
-        }
-    }
+        sensors.fsr[i] = (int32_t)buf;
+    #endif
 }
 
 void readTouch() {
@@ -477,7 +502,7 @@ static void handle_6dof_motion_drdy(const struct device *dev, const struct senso
 
 void readIMU() {
     // Read data from IMU
-    #ifdef CONFIG_ICM42670_TRIGGER
+    #ifndef CONFIG_ICM42670_TRIGGER
     sensor_sample_fetch_chan(imu, SENSOR_CHAN_ACCEL_XYZ);
     sensor_sample_fetch_chan(imu, SENSOR_CHAN_GYRO_XYZ);
     #endif
@@ -507,9 +532,9 @@ void readIMU() {
         struct sensor_value mag[3];
         sensor_channel_get(magn, SENSOR_CHAN_MAGN_XYZ,mag);
         // store in uTesla
-        sensors.magn[0] = sensor_value_to_float(&mag[1]) * 100.0f; // x axis of T-Stick is the Y Axis of the magnetomer
-        sensors.magn[1] = sensor_value_to_float(&mag[0]) * 100.0f; // y axis of T-Stick is the x Axis of the magnetomer
-        sensors.magn[2] = sensor_value_to_float(&mag[2]) * 100.0f;
+        sensors.magn[0] = sensor_value_to_float(&mag[1]); // x axis of T-Stick is the Y Axis of the magnetomer
+        sensors.magn[1] = sensor_value_to_float(&mag[0]); // y axis of T-Stick is the x Axis of the magnetomer
+        sensors.magn[2] = sensor_value_to_float(&mag[2]);
 
         // Update timer
         magnetometer.timer = k_uptime_get_32();
@@ -700,7 +725,7 @@ int initDevices() {
     printk("Configured Touch sensor  ...\n");
 
     /* Configure adc channels individually prior to sampling. */
-	for (size_t i = 0U; i < ARRAY_SIZE(adc_channels); i++) {
+	for (size_t i = 0U; i < num_adc_channels; i++) {
 		if (!adc_is_ready_dt(&adc_channels[i])) {
 			printk("ADC controller device %s not ready\n", adc_channels[i].dev->name);
 			return 1;
@@ -713,6 +738,10 @@ int initDevices() {
 		}
         printk("Configured ADC %s ...\n", adc_channels[i].dev->name);
 	}
+    #ifdef CONFIG_ADC_ASYNC
+    // Start adc reads
+    readAnalog();
+    #endif
 
     // if we got through all of that
     return 0;
@@ -787,7 +816,9 @@ int main(void)
         readButton();
         
         // Read ADC
+        #ifndef CONFIG_ADC_ASYNC
         readAnalog();
+        #endif
 
         // Read touch
         // TODO: use non blocking i2c call
