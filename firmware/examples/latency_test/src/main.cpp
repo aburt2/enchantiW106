@@ -378,6 +378,20 @@ SHELL_CMD_REGISTER(osc, &sub_osc_commands, "OSC commands", NULL);
 /********* MAIN **********/
 int main(void)
 {
+    // Configure LED
+    int ret;
+    if (!gpio_is_ready_dt(&led)) {
+        LOG_INF("FAILED LED SETUP\n");
+        return 1;
+    }
+
+    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+    if (ret < 0) {
+        LOG_INF("FAILED LED CONFIGURATION\n");
+        return 1;
+    }
+    LOG_INF("Configured LED");
+
     // Wait for wifi network manager to be initialised
     k_msleep(5000);
     
@@ -408,24 +422,11 @@ int main(void)
     connect_to_wifi();
     wait_for_network();
     k_msleep(500);
-    enable_ap_mode();
-
-    int ret;
-    if (!gpio_is_ready_dt(&led)) {
-        LOG_INF("FAILED LED SETUP\n");
-        return 1;
-    }
-
-    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
-    if (ret < 0) {
-        LOG_INF("FAILED LED CONFIGURATION\n");
-        return 1;
-    }
-    LOG_INF("Configured LED");
+    // enable_ap_mode();
 
     // Initialise the OSC address
     LOG_INF("Initialising OSC-IP1  ... ");
-    osc1 = lo_address_new("192.168.86.230", "8000");
+    osc1 = lo_address_new("192.168.86.230", "8001");
     LOG_INF("Configured OSC  ...");
 
     // Create a server
