@@ -28,10 +28,6 @@
 #include <chrono>
 #include <iostream>
 
-// Get Network time
-#include <zephyr/net/sntp.h>
-#include <sys/time.h>
-
 // Logger
 LOG_MODULE_REGISTER(MAIN);
 
@@ -39,9 +35,11 @@ LOG_MODULE_REGISTER(MAIN);
 #define SLEEP_TIME_MS   1000
 #define LOG_RATE_MS     5000
 #define BOOT_UP_DELAY_MS 500
-#define OSC_RATE_TICKS 10
-#define SYNC_TIME_MS 3600
+#define OSC_RATE_TICKS 100
 #define USEC_PER_TICK (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#define SEC_PER_TICK float(USEC_PER_TICK) / 1000000.0f
+#define USEC_PER_CYCLE (1000000 / CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC)
+#define OSC_SLEEP_TICKS K_USEC(OSC_RATE_TICKS)
 // /* The devicetree node identifier for the "led0" alias. */
 #define LED0_NODE DT_ALIAS(led0)
 
@@ -56,20 +54,17 @@ LOG_MODULE_REGISTER(MAIN);
     /* AP Mode Configuration */
     #define WIFI_AP_SSID       "TSTick_530"
     #define WIFI_AP_PSK        "mappings"
-    #define WIFI_AP_IP_ADDRESS "192.168.4.1"
-    #define WIFI_AP_NETMASK    "255.255.255.0"
 #endif
 
-
-// SNTP Settings
-#define SNTP_PORT 123
-#define SNTP_SERVER "au.pool.ntp.org"
+#define WIFI_AP_IP_ADDRESS CONFIG_NXP_WIFI_SOFTAP_IP_GATEWAY
+#define WIFI_AP_NETMASK    CONFIG_NXP_WIFI_SOFTAP_IP_MASK
 
 // Networking settings
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_event.h>
 #include <zephyr/net/wifi_mgmt.h>
 #include <zephyr/net/dhcpv4_server.h>
+
 // Network interfaces
 static struct net_if *sta_iface;
 static struct net_if *ap_iface;
@@ -92,12 +87,67 @@ bool ap_enabled = false;
 
 
 // Functions declarations
+static int disable_power_saving();
 static int connect_to_wifi(void);
 static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
 			       struct net_if *iface);
 
 
 // Function definitions
+
+#include <zephyr/net/conn_mgr_connectivity.h>
+
+#if defined(CONFIG_NET_CONNECTION_MANAGER)
+#define L4_EVENT_MASK (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
+
+static struct net_mgmt_event_callback l4_cb;
+static K_SEM_DEFINE(network_connected, 0, 1);
+
+static void l4_event_handler(struct net_mgmt_event_callback *cb, uint32_t event,
+			     struct net_if *iface)
+{
+	switch (event) {
+	case NET_EVENT_L4_CONNECTED:
+		LOG_INF("Network connectivity established and IP address assigned");
+		k_sem_give(&network_connected);
+		break;
+	case NET_EVENT_L4_DISCONNECTED:
+		break;
+	default:
+		break;
+	}
+}
+
+void wait_for_network(void)
+{
+	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
+	net_mgmt_add_event_callback(&l4_cb);
+
+	LOG_INF("Waiting for network...");
+
+	k_sem_take(&network_connected, K_FOREVER);
+}
+#endif /* CONFIG_NET_CONNECTION_MANAGER */
+
+static int disable_power_saving() {
+    struct wifi_ps_params params;
+
+    // Setup power saving config
+    params.enabled = WIFI_PS_DISABLED;
+    params.type = WIFI_PS_PARAM_STATE;
+    
+    // Request disabling power saving
+    if (net_mgmt(NET_REQUEST_WIFI_PS, sta_iface, &params, sizeof(params))) {
+		LOG_INF("PS %s failed. Reason: %s\n",
+			   params.enabled ? "enable" : "disable",
+			   wifi_ps_get_config_err_code_str(params.fail_reason));
+		return -ENOEXEC;
+	}
+
+    return 0;
+}
+
+
 static int connect_to_wifi(void)
 {
 	if (!sta_iface) {
@@ -134,41 +184,6 @@ static int connect_to_wifi(void)
 	return ret;
 }
 
-static void enable_dhcpv4_server(void)
-{
-	static struct in_addr addr;
-	static struct in_addr netmaskAddr;
-
-	if (net_addr_pton(AF_INET, WIFI_AP_IP_ADDRESS, &addr)) {
-		LOG_ERR("Invalid address: %s", WIFI_AP_IP_ADDRESS);
-		return;
-	}
-
-	if (net_addr_pton(AF_INET, WIFI_AP_NETMASK, &netmaskAddr)) {
-		LOG_ERR("Invalid netmask: %s", WIFI_AP_NETMASK);
-		return;
-	}
-
-	net_if_ipv4_set_gw(ap_iface, &addr);
-
-	if (net_if_ipv4_addr_add(ap_iface, &addr, NET_ADDR_MANUAL, 0) == NULL) {
-		LOG_ERR("unable to set IP address for AP interface");
-	}
-
-	if (!net_if_ipv4_set_netmask_by_addr(ap_iface, &addr, &netmaskAddr)) {
-		LOG_ERR("Unable to set netmask for AP interface: %s", WIFI_AP_NETMASK);
-	}
-
-	addr.s4_addr[3] += 10; /* Starting IPv4 address for DHCPv4 address pool. */
-
-	if (net_dhcpv4_server_start(ap_iface, &addr) != 0) {
-		LOG_ERR("DHCP server is not started for desired IP");
-		return;
-	}
-
-	LOG_INF("DHCPv4 server started...\n");
-}
-
 static int enable_ap_mode(void)
 {
 	if (!ap_iface) {
@@ -181,7 +196,7 @@ static int enable_ap_mode(void)
 	ap_config.ssid_length = strlen(WIFI_AP_SSID);
 	ap_config.psk = (const uint8_t *)WIFI_AP_PSK;
 	ap_config.psk_length = strlen(WIFI_AP_PSK);
-	ap_config.channel = WIFI_CHANNEL_ANY;
+	ap_config.channel = 11;
 	ap_config.band = WIFI_FREQ_BAND_2_4_GHZ;
     ap_config.bandwidth = WIFI_FREQ_BANDWIDTH_20MHZ;
 
@@ -191,8 +206,6 @@ static int enable_ap_mode(void)
 
 		ap_config.security = WIFI_SECURITY_TYPE_PSK;
 	}
-
-	enable_dhcpv4_server();
 
 	int ret = net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ap_iface, &ap_config,
 			   sizeof(struct wifi_connect_req_params));
@@ -219,7 +232,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt
 	}
 	case NET_EVENT_WIFI_AP_ENABLE_RESULT: {
 		LOG_INF("AP Mode is enabled. Waiting for station to connect");
-        wifi_enabled = false;
+        ap_enabled = true;
 		break;
 	}
 	case NET_EVENT_WIFI_AP_DISABLE_RESULT: {
@@ -251,15 +264,6 @@ lo_address osc1;
 lo_address osc2;
 oscBundle puara_bundle;
 lo_server osc_server;
-timeval tv;
-uint32_t tv_secs;
-double msg_time;
-double offset_time;
-#define FRAC_TO_SEC 0.00000000023283064365
-lo_timetag lo_tt;
-lo_timetag lo_offset_tt;
-uint32_t last_sync;
-uint32_t start_cycle;
 int secs_idx;
 int bundle_size = 0;
 int size_idx;
@@ -271,11 +275,13 @@ int mcu_offset = 0;
 int last_time = 0;
 int last_log_time = 0;
 bool wifi_on = false;
-int start = 0;
-int end = 0;
 #define TEST_SIZE 256
 int test_array[TEST_SIZE];
 int test_idx;
+
+// timing variables
+uint32_t start;
+uint32_t end;
 
 // OSC Namespace
 std::string baseNamespace = "";
@@ -285,20 +291,11 @@ std::string oscNamespace;
 void error(int num, const char *msg, const char *path);
 int generic_handler(const char *path, const char *types, lo_arg ** argv,
                     int argc, lo_message data, void *user_data);
+int ping_handler(const char *path, const char *types, lo_arg ** argv,
+                    int argc, lo_message data, void *user_data);
 void updateOSC();
 void initOSC_bundle();
 void updateOSC_bundle();
-double timetag_to_double(uint32_t secs, uint32_t frac);
-double timeval_to_double(timeval tv);
-
-double timetag_to_double(uint32_t secs, uint32_t frac) {
-    return double(secs) + (double(frac) * FRAC_TO_SEC);
-}
-
-double timeval_to_double(timeval tv) {
-    return double(tv.tv_sec) + ((double(tv.tv_usec) * 0.000001));
-}
-
 void error(int num, const char *msg, const char *path) {
     printf("Liblo server error %d in path %s: %s\n", num, path, msg);
     fflush(stdout);
@@ -317,11 +314,18 @@ int generic_handler(const char *path, const char *types, lo_arg ** argv,
     return 1;
 }
 
+int ping_handler(const char *path, const char *types, lo_arg ** argv,
+                    int argc, lo_message data, void *user_data) {
+    counter = argv[0]->i + 1;
+    updateOSC();
+    return 1;
+}
+
 void updateOSC() {
     // Create a bundle and send it to both IP addresses
     updateOSC_bundle();
 
-    if (wifi_enabled && !ap_enabled) {
+    if (wifi_enabled) {
         puara_bundle.fast_send(osc1, osc_server);
     }
 }
@@ -330,15 +334,13 @@ void initOSC_bundle() {
     puara_bundle.add(&counter_idx, "test/counter",  counter);
     puara_bundle.add(&looptime_idx, "test/looptime", looptime);
     puara_bundle.add(&size_idx, "test/bundlelength", bundle_size);
-    puara_bundle.add(&secs_idx, "test/secs", msg_time);
-    puara_bundle.add(&test_idx, "test_array", TEST_SIZE, test_array);
+    puara_bundle.add(&test_idx, "test/array", TEST_SIZE, test_array);
 }
 
 void updateOSC_bundle() {
     puara_bundle.update_message(counter_idx,  counter);
     puara_bundle.update_message(looptime_idx, looptime);
     puara_bundle.update_message(size_idx, bundle_size);
-    puara_bundle.update_message(secs_idx, msg_time);
     puara_bundle.update_message(test_idx, TEST_SIZE, test_array);
 }
 
@@ -346,11 +348,66 @@ void updateOSC_bundle() {
  * A build error on this line means your board is unsupported.
  * See the sample documentation for information on how to fix this.
  */
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+
+
+/***************** SHELL COMMANDS *********************/
+
+static int cmd_osc_reply(const struct shell *sh, size_t argc,
+			      char **argv, uint32_t period)
+{
+	ARG_UNUSED(argv);
+    start = k_cycle_get_32();
+	updateOSC();
+    end = k_cycle_get_32();
+    looptime = k_cyc_to_us_ceil32(end - start);
+	return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_osc_commands,
+	SHELL_CMD(ping, NULL, "Ping command.", cmd_osc_reply),
+	SHELL_SUBCMD_SET_END /* Array terminated. */
+);
+
+SHELL_CMD_REGISTER(osc, &sub_osc_commands, "OSC commands", NULL);
+
+
+struct sensor_timers {
+    uint32_t timer = 0;
+    uint32_t interval;
+
+    sensor_timers(int period) : interval(period) {};
+};
+struct sensor_timers led(SLEEP_TIME_MS);
+struct sensor_timers osc(0);
+void changeLED();
+bool led_state = false;
+void changeLED() {
+    // TODO: USE PWM instead of toggle
+    if ((k_uptime_get_32() - led.timer) > led.interval) {
+        gpio_pin_toggle_dt(&led0);
+        led_state = !led_state;
+        led.timer = k_uptime_get_32();
+    }
+}
 
 /********* MAIN **********/
 int main(void)
 {
+    // Configure LED
+    int ret;
+    if (!gpio_is_ready_dt(&led0)) {
+        LOG_INF("FAILED LED SETUP\n");
+        return 1;
+    }
+
+    ret = gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+    if (ret < 0) {
+        LOG_INF("FAILED LED CONFIGURATION\n");
+        return 1;
+    }
+    LOG_INF("Configured LED");
+
     // Wait for wifi network manager to be initialised
     k_msleep(5000);
     
@@ -374,49 +431,14 @@ int main(void)
     }
     LOG_INF("AP: is initialized");
 
+    // Disable wifi power saving mode
+    disable_power_saving();
+
     // Connect to wifi
     connect_to_wifi();
+    wait_for_network();
+    k_msleep(500);
     // enable_ap_mode();
-
-    // Start OSC thread
-    while (!wifi_enabled) {
-        k_msleep(500);
-    }
-    LOG_INF("Connect to Wifi");
-
-        int ret;
-    bool led_state = true;
-    
-    if (!gpio_is_ready_dt(&led)) {
-        LOG_INF("FAILED LED SETUP\n");
-        return 1;
-    }
-
-    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
-    if (ret < 0) {
-        LOG_INF("FAILED LED CONFIGURATION\n");
-        return 1;
-    }
-    LOG_INF("Configured LED");
-
-    // Wait a bit
-    LOG_INF("Wait until I have an IP Address");
-    k_msleep(5000);
-
-    // Get SNTP clock
-    /* ipv4 */
-    struct sntp_time sntp_time;
-    int rv;
-    start = k_cycle_get_32();
-    rv = sntp_simple(SNTP_SERVER, 3600, &sntp_time);
-    start_cycle = k_cycle_get_32();
-    mcu_offset = k_cyc_to_us_ceil32((start_cycle-start));
-
-    LOG_INF("status: %d", rv);
-	LOG_INF("time since Epoch: high word: %u, low word: %u, fraction: %u", (uint32_t)(sntp_time.seconds >> 32), (uint32_t)sntp_time.seconds, sntp_time.fraction);
-    LOG_INF("MCU offset: %d", mcu_offset);
-    offset_time = timetag_to_double((uint32_t)sntp_time.seconds, sntp_time.fraction);
-    LOG_INF("Offset time %lf", offset_time);
 
     // Initialise the OSC address
     LOG_INF("Initialising OSC-IP1  ... ");
@@ -428,7 +450,7 @@ int main(void)
     lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
 
     // Initialise base namespace
-    baseNamespace.append("TStick_520");
+    baseNamespace.append("TStick_530");
     puara_bundle.init(baseNamespace.c_str());
     initOSC_bundle();
 
@@ -439,35 +461,17 @@ int main(void)
     LOG_INF("Bundle Size: %d", puara_bundle.data_len);
     LOG_INF("Starting Sending OSC messages");
 
-    while(1) {
-        start = k_cycle_get_32();
-        // Counter
-		counter++;
+    // Turn Led on to show it is done
+    while (1) {
+        changeLED();
 
-        // Get bundle size
-        bundle_size = puara_bundle.data_len;
-
-        // Update sntp time
-        msg_time = offset_time + (double(k_cyc_to_ms_ceil32(k_cycle_get_32() - start_cycle)) * 0.001);
-
-        // // Get time
-        // gettimeofday(&tv, NULL);
-
-        // // Get time double
-        // msg_time = timeval_to_double(tv);
-
-		// Only send if network was properly configured
-        updateOSC();
-        end = k_cycle_get_32();
-        looptime = k_cyc_to_us_ceil32((end-start));
-
-        if ((k_uptime_get_32() - last_time) > SLEEP_TIME_MS) {
-            ret = gpio_pin_toggle_dt(&led);
-            led_state = !led_state;
-            last_time = k_uptime_get_32();
+        if ((k_uptime_get_32() - osc.timer) > osc.interval) {
+            osc.timer = k_uptime_get_32();
+            updateOSC();
+            k_yield();
+        } else {
+            k_sleep(OSC_SLEEP_TICKS); // sleep for 100us to allow the interrupts and the uart driver to work 
         }
-
-        // Sleep thread for a bit
-        k_msleep(1);
     }
+    return 0;
 }
