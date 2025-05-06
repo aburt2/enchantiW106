@@ -27,7 +27,7 @@
 #include <lo/lo_types.h>
 #include <chrono>
 #include <iostream>
-
+#include <zephyr/random/random.h>
 // Logger
 LOG_MODULE_REGISTER(MAIN);
 
@@ -161,7 +161,7 @@ static int connect_to_wifi(void)
 	sta_config.psk_length = strlen(WIFI_PSK);
 	sta_config.security = WIFI_SECURITY_TYPE_PSK;
 	sta_config.channel = WIFI_CHANNEL_ANY;
-	sta_config.band = WIFI_FREQ_BAND_UNKNOWN;
+	sta_config.band = WIFI_FREQ_BAND_5_GHZ;
     sta_config.bandwidth = WIFI_FREQ_BANDWIDTH_20MHZ;
     sta_config.mfp = WIFI_MFP_OPTIONAL;
 
@@ -379,7 +379,7 @@ struct sensor_timers {
     sensor_timers(int period) : interval(period) {};
 };
 struct sensor_timers led(SLEEP_TIME_MS);
-struct sensor_timers osc(0);
+struct sensor_timers osc(9);
 void changeLED();
 bool led_state = false;
 void changeLED() {
@@ -414,6 +414,12 @@ int main(void)
     // Adding network call back events
     net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);
 	net_mgmt_add_event_callback(&cb);
+
+    // Generating unique hostname
+    int hostid = sys_rand32_get() % 1000;
+    char device_hostname[11];
+    snprintf(device_hostname, 11, "TStick_%03d", hostid);
+    net_hostname_set(device_hostname, 11);
 
     // Wait for iface to be initialised
     sta_iface = net_if_get_wifi_sta();
@@ -450,7 +456,7 @@ int main(void)
     lo_server_add_method(osc_server, NULL, NULL, generic_handler, NULL);
 
     // Initialise base namespace
-    baseNamespace.append("TStick_530");
+    baseNamespace.append(device_hostname);
     puara_bundle.init(baseNamespace.c_str());
     initOSC_bundle();
 
@@ -465,7 +471,12 @@ int main(void)
     while (1) {
         changeLED();
 
+        for (int i = 0; i < TEST_SIZE; i++) {
+            test_array[i] = counter + i;
+        }
+
         if ((k_uptime_get_32() - osc.timer) > osc.interval) {
+            counter++;
             osc.timer = k_uptime_get_32();
             updateOSC();
             k_yield();

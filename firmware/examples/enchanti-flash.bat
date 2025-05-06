@@ -63,24 +63,18 @@ if %errorlevel% neq 0 goto :step_failed
 
 echo Step 6 successful.
 
-echo Step 7: Flash erasing region 0x08400000 
-%BLHOST_PATH% -p %COM_PORT% %TIMEOUT% -- flash-erase-region 0x08400000 0x1DFFFF
+echo Step 7: Flash erasing region 0x08000000 
+%BLHOST_PATH% -p %COM_PORT% %TIMEOUT% -- flash-erase-region 0x08000000 0x10000
 if %errorlevel% neq 0 goto :step_failed
 
 echo Step 7 successful.
 
-echo Step 8: Flash erasing region 0x08000000 
-%BLHOST_PATH% -p %COM_PORT% %TIMEOUT% -- flash-erase-region 0x08000000 0x3FFFFF
-if %errorlevel% neq 0 goto :step_failed
-
-echo Step 8 successful.
-
 rem Flashing application
-echo Step 9: Writing application .bin to memory...
+echo Step 8: Writing application .bin to memory...
 %BLHOST_PATH% -p %COM_PORT% %TIMEOUT% -- write-memory 0x08000000 %F_APP_BIN%
 if %errorlevel% neq 0 goto :step_failed
 
-echo Step 9 successful.
+echo Step 8 successful.
 
 echo End of Fidelix .
 

@@ -1,0 +1,9 @@
+/*
+ * Copyright (c) 2025 Albert Niyonsenga
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&enet_mac {
+    nxp,unique-mac;
+};

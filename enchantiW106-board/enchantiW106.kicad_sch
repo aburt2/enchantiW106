@@ -13723,10 +13723,10 @@
 		)
 		(uuid "ffc36c1c-f3d7-40cd-9f46-ff97f745b9a2")
 	)
-	(text_box "LED Pins (PWM outputs)\nORANGELED = GPIO27 (OUT5)\nLED1 = GPIO35 (OUT6)\nLED2 = GPIO36 (OUT7)\nBLUELED = GPIO55 (OUT9)"
+	(text_box "LED Pins (PWM outputs)\nORANGELED = GPIO27 (OUT5) (Port: 0 pin: 27)\nBLUELED = GPIO55 (OUT9) (Port: 1 pin: 23)\nLED1 = GPIO35 (OUT6) (Port: 1 pin: 3)\nLED2 = GPIO36 (OUT7) (port: 1 pin: 4)\n"
 		(exclude_from_sim no)
 		(at 111.76 135.89 0)
-		(size 31.75 12.7)
+		(size 48.26 12.7)
 		(stroke
 			(width 0)
 			(type default)
