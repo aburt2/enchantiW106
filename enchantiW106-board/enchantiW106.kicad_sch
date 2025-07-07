@@ -27376,7 +27376,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" ""
+		(property "Description" "36.5 kOhms ±1% 0.063W, 1/16W Chip Resistor 0402 (1005 Metric)"
 			(at 161.29 184.15 0)
 			(effects
 				(font
@@ -27385,7 +27385,7 @@
 				(hide yes)
 			)
 		)
-		(property "Mfg Part #" ""
+		(property "Mfg Part #" "RC0402FR-0736K5L"
 			(at 161.29 184.15 0)
 			(effects
 				(font
@@ -27394,7 +27394,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer" "Panasonic Electronic Components"
+		(property "Manufacturer" "YAGEO"
 			(at 161.29 184.15 0)
 			(effects
 				(font
@@ -28182,7 +28182,25 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Buck-Boost Converter, 1.8-5.5V Input Voltage, 0.4A Switch Current, Adjustable 1.8-5V Output Voltage, WSON-10"
+		(property "Description" "Buck-Boost Switching Regulator IC Positive Programmable 1.8V 1 Output 400mA 10-WFDFN Exposed Pad"
+			(at 146.05 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Mfg Part #" "TPS63900DSKR"
+			(at 146.05 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer" "Texas Instruments"
 			(at 146.05 184.15 0)
 			(effects
 				(font
