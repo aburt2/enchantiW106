@@ -2,5 +2,8 @@
 .*
 !/.gitignore
 
+#Ignore lock files
+*.lck
+
 # Ignore Kicad backups
 /*backups
