@@ -18167,7 +18167,7 @@
 	)
 	(wire
 		(pts
-			(xy 294.64 96.52) (xy 294.64 99.06)
+			(xy 307.34 88.9) (xy 307.34 91.44)
 		)
 		(stroke
 			(width 0)
@@ -18497,7 +18497,7 @@
 	)
 	(wire
 		(pts
-			(xy 294.64 86.36) (xy 294.64 88.9)
+			(xy 307.34 78.74) (xy 307.34 81.28)
 		)
 		(stroke
 			(width 0)
@@ -21769,7 +21769,7 @@
 	(symbol
 		(lib_name "GND_2")
 		(lib_id "power:GND")
-		(at 294.64 99.06 0)
+		(at 307.34 91.44 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -21778,7 +21778,7 @@
 		(fields_autoplaced yes)
 		(uuid "18c97f5b-80de-4417-a14d-e788063179fb")
 		(property "Reference" "#PWR0107"
-			(at 294.64 105.41 0)
+			(at 307.34 97.79 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21787,7 +21787,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 294.64 104.14 0)
+			(at 307.34 96.52 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21795,7 +21795,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 294.64 99.06 0)
+			(at 307.34 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21804,7 +21804,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 294.64 99.06 0)
+			(at 307.34 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21813,7 +21813,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 294.64 99.06 0)
+			(at 307.34 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24128,7 +24128,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 294.64 92.71 0)
+		(at 307.34 85.09 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -24136,7 +24136,7 @@
 		(dnp no)
 		(uuid "337d841b-3ee8-4fb6-8e6c-c75886ac62a0")
 		(property "Reference" "C28"
-			(at 288.798 91.44 0)
+			(at 301.498 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24145,7 +24145,7 @@
 			)
 		)
 		(property "Value" "1uF"
-			(at 288.798 93.98 0)
+			(at 301.498 86.36 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24154,7 +24154,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
-			(at 295.6052 96.52 0)
+			(at 308.3052 88.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24163,7 +24163,7 @@
 			)
 		)
 		(property "Datasheet" "https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/41/CL03A105KQ3CSNC_Spec.pdf"
-			(at 294.64 92.71 0)
+			(at 307.34 85.09 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24172,7 +24172,7 @@
 			)
 		)
 		(property "Description" "1 µF ±10% 16V Ceramic Capacitor X5R 0402 (1005 Metric)"
-			(at 294.64 92.71 0)
+			(at 307.34 85.09 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24181,7 +24181,7 @@
 			)
 		)
 		(property "Mfg Part #" "CL05A105KO5NNNC"
-			(at 294.64 92.71 0)
+			(at 307.34 85.09 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24190,7 +24190,7 @@
 			)
 		)
 		(property "Manufacturer" "Samsung Electro-Mechanics"
-			(at 294.64 92.71 0)
+			(at 307.34 85.09 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25534,7 +25534,7 @@
 	)
 	(symbol
 		(lib_id "power-symbols:3V3_AUX")
-		(at 294.64 86.36 0)
+		(at 307.34 78.74 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -25543,7 +25543,7 @@
 		(fields_autoplaced yes)
 		(uuid "4b7e6c91-a23c-4e36-9b7a-5c31f978e763")
 		(property "Reference" "#PWR88"
-			(at 294.64 82.55 0)
+			(at 307.34 74.93 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25552,7 +25552,7 @@
 			)
 		)
 		(property "Value" "3V3_AUX"
-			(at 294.64 81.915 0)
+			(at 307.34 74.295 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25560,7 +25560,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 294.64 86.36 0)
+			(at 307.34 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25569,7 +25569,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 294.64 86.36 0)
+			(at 307.34 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25578,7 +25578,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 294.64 86.36 0)
+			(at 307.34 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
