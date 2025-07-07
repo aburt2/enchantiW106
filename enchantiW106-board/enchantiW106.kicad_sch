@@ -11238,10 +11238,6 @@
 		(uuid "4d0a9d1b-a059-45d1-b73c-5ba021f8a40f")
 	)
 	(no_connect
-		(at 138.43 39.37)
-		(uuid "530adf0e-5a17-4fff-bae1-ac5c4eb7e844")
-	)
-	(no_connect
 		(at 187.96 72.39)
 		(uuid "531a6594-b73e-4d88-bd53-df122a406663")
 	)
@@ -12424,6 +12420,16 @@
 			(type default)
 		)
 		(uuid "3d77fda1-92a7-40ec-a6f6-5fca6dbb1ad8")
+	)
+	(wire
+		(pts
+			(xy 133.35 39.37) (xy 138.43 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3da90d36-ef41-4297-89ec-fd4e91b00778")
 	)
 	(wire
 		(pts
@@ -15604,6 +15610,16 @@
 			(justify right bottom)
 		)
 		(uuid "113f8efb-036f-4931-9b1e-1b2fc3de3003")
+	)
+	(label "IMU_INT"
+		(at 137.16 39.37 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "11788827-2ae7-4d4d-ac54-81503f096ee8")
 	)
 	(label "IMU_SCLK"
 		(at 138.43 46.99 180)
