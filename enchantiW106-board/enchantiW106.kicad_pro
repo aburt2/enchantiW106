@@ -647,7 +647,20 @@
       "version": 4
     },
     "net_colors": null,
-    "netclass_assignments": null,
+    "netclass_assignments": {
+      "/Iris W106/+1V8_VIO": [
+        "Power"
+      ],
+      "/Iris W106/+3V3_VIO": [
+        "Power"
+      ],
+      "MCU_VCC": [
+        "Power"
+      ],
+      "MCU_VIO": [
+        "Power"
+      ]
+    },
     "netclass_patterns": [
       {
         "netclass": "Power",
@@ -845,6 +858,26 @@
     [
       "1e57a4ff-0c95-4e2b-9e56-d9bf8e99c9a1",
       "Root"
+    ],
+    [
+      "debe86e3-b9af-4ef4-8965-9235fc59af83",
+      "Iris W106"
+    ],
+    [
+      "0b9fc9da-6359-4a5a-8755-0ae85a48e9e9",
+      "Sensor Co-Processor"
+    ],
+    [
+      "2685b9a2-f652-4989-bb8a-0bc02587d2dd",
+      "USB-UART Bridge"
+    ],
+    [
+      "2916dce4-da60-474c-bda6-a0768309540d",
+      "Battery and Power Management"
+    ],
+    [
+      "113b4af5-d7bc-4c95-85dc-acaaacb5e0dd",
+      "Peripherals"
     ]
   ],
   "text_variables": {}
